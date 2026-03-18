@@ -1,8 +1,8 @@
-# TranslateGemma-4B Fine-tuning: Spanish → Valencian NMT
+# TranslateGemma-4B Fine-tuning: Spanish → Valencian MT
 
-**Fine-tuning `google/translategemma-4b-it` for the low-resource ES→VA translation task using SFT and GRPO with composite reward shaping.**
+**Enhancing Translation Performance with TranslateGemma-4B for Spanish-to-Valencian Translation through SFT and Reinforcement Learning**
 
-> MSc Deep Learning Project · Universitat Politècnica de València · 2025–2026  
+> MSc Language Analysis and Processing · University of the Basque Country · 2025–2026  
 > Author: Paula Guerrero
 
 ---
@@ -160,11 +160,9 @@ python scripts/dialectal_score.py --input your_hypotheses.txt
 
 ```bibtex
 @misc{guerrero2026translategemma_va,
-  title     = {Fine-tuning TranslateGemma-4B for Spanish–Valencian Neural Machine Translation
-               via SFT and GRPO with Composite Reward Shaping},
+  title     = {Enhancing Translation Performance with TranslateGemma-4B for Spanish-to-Valencian Translation through SFT and Reinforcement Learning},
   author    = {Guerrero, Paula},
   year      = {2026},
-  institution = {Universitat Politècnica de València},
   note      = {MSc Deep Learning Project}
 }
 ```
