@@ -26,8 +26,8 @@ Valencian is a southern variety of Catalan with distinct morphological and lexic
 |---|---|---|---|---|---|---|---|
 | Baseline | 69.02 | 39.22 | 40.30 | 0.258 | 0.906 | 3.2% | 0.809 |
 | SFT | 83.16 | 60.16 | 22.80 | 0.524 | 0.934 | **41.0%** | 0.835 |
-| **GRPO v1** ★ | **84.68** | **62.16** | **20.63** | **0.544** | **0.936** | 36.2% | **0.882** |
-| GRPO v2 | 81.65 | 56.94 | 23.96 | 0.481 | 0.926 | 15.9% | 0.864 |
+| GRPO v1 | 81.65 | 56.94 | 23.96 | 0.481 | 0.926 | 15.9% | 0.864 |
+| **GRPO v2** ★ | **84.68** | **62.16** | **20.63** | **0.544** | **0.936** | 36.2% | **0.882** |
 
 ★ Best on all primary translation quality metrics.
 
@@ -118,7 +118,7 @@ Run notebooks in order on **Google Colab** (A100 recommended):
 
 ## Reward Functions
 
-### GRPO v1 — chrF + HT/MT Classifier
+### GRPO (chrF+clf) 
 ```python
 r_final = (1 - α) * r_c + α * r_t
 
@@ -127,7 +127,7 @@ r_final = (1 - α) * r_c + α * r_t
 # α   = 0 → 0.3  (linear warm-up after 50 steps)
 ```
 
-### GRPO v2 — Multi-component Composite
+### GRPO (composite) — Best model
 ```python
 r = 0.5 * chrF(hyp, ref) + 0.3 * COMET(src, hyp, ref) + 0.2 * TTR(hyp) + copy_penalty(src, hyp)
 
