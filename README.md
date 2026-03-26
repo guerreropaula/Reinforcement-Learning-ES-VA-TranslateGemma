@@ -101,14 +101,6 @@ google/translategemma-4b-it (baseline)
 
 ---
 
-## Setup
-
-```bash
-git clone https://github.com/YOUR_USERNAME/translategemma-es-va.git
-cd translategemma-es-va
-pip install -r requirements.txt
-```
-
 Run notebooks in order on **Google Colab** (A100 recommended):
 
 1. `02_ht_mt_classifier.ipynb` — train the translationese classifier first
@@ -139,7 +131,7 @@ r = 0.5 * chrF(hyp, ref) + 0.3 * COMET(src, hyp, ref) + 0.2 * TTR(hyp) + copy_pe
 
 ```bibtex
 @misc{guerrero2026translategemma_va,
-  title   = {Fine-tuning TranslateGemma-4B for Spanish–Valencian NMT via SFT and GRPO},
+  title   = {Enhancing LLM Translation Performance for Spanish-Valencian through Supervised Fine-tuning and Reinforcement Learning},
   author  = {Guerrero, Paula},
   year    = {2026},
   note    = {MSc Deep Learning Project, University of the Basque Country}
