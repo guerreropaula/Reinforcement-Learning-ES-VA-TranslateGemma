@@ -2,7 +2,7 @@
 
 **Fine-tuning `google/translategemma-4b-it` for the low-resource ES-VA direction using SFT and GRPO**
 
-> MSc Deep Learning Project · University of the Basque Country · 2025–2026  
+> MSc Language Analysis and Processing · University of the Basque Country · 2025–2026  
 > Author: Paula Guerrero
 
 ---
