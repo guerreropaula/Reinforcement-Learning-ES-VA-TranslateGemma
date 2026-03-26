@@ -103,11 +103,11 @@ google/translategemma-4b-it (baseline)
 
 Run notebooks in order on **Google Colab** (A100 recommended):
 
-1. `02_ht_mt_classifier.ipynb` — train the translationese classifier first
-2. `01_sft.ipynb` — SFT training
+1. `01_sft.ipynb` — SFT training
+2. `02_ht_mt_classifier.ipynb` — train the translationese classifier first
 3. `03_grpo_v1.ipynb` — GRPO v1
 4. `04_grpo_v2.ipynb` — GRPO v2 ★
-5. `05_evaluation.ipynb` — full evaluation + dialectal analysis
+5. `05_evaluation.ipynb` — full evaluation for 4 approaches + dialectal analysis
 
 ---
 
@@ -137,7 +137,3 @@ r = 0.5 * chrF(hyp, ref) + 0.3 * COMET(src, hyp, ref) + 0.2 * TTR(hyp) + copy_pe
   note    = {MSc Deep Learning Project, University of the Basque Country}
 }
 ```
-
----
-
-*Code: MIT · Model weights follow the [Gemma Terms of Use](https://ai.google.dev/gemma/terms)*
