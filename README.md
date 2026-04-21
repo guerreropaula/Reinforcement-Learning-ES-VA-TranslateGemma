@@ -111,7 +111,7 @@ Run notebooks in order on Google Colab (A100 recommended).
 
 | System | Model Hub |
 |---|---|
-| SFT | [`guerreropaula/translategemma4b-sft-es-va2`](https://huggingface.co/guerreropaula/translategemma4b-sft-es-va2) |
+| SFT | [`guerreropaula/translategemma4b-sft-es-va2`](https://huggingface.co/guerreropaula/translategemma4b-sft-es-va) |
 | GRPOv1 | [`guerreropaula/80translategemma4b-grpo-es-va`](https://huggingface.co/guerreropaula/translategemma4b-grpov1-es-va) |
 | GRPOv2 ★ | [`guerreropaula/translategemma4b-grpo2-es-va`](https://huggingface.co/guerreropaula/translategemma4b-grpov2-es-va) |
 | HT/MT Classifier | [`guerreropaula/ht_mt_classifier_best`](https://huggingface.co/guerreropaula/ht_mt_classifier_best) |
