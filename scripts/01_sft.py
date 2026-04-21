@@ -259,5 +259,5 @@ model.save_pretrained(SFT_ADAPTER_DIR)
 tokenizer.save_pretrained(SFT_ADAPTER_DIR)
 print(f"LoRA adapter saved to: {SFT_ADAPTER_DIR}")
 
-model.push_to_hub("guerreropaula/translategemma4b-sft-es-va2", token=HF_TOKEN)
-tokenizer.push_to_hub("guerreropaula/translategemma4b-sft-es-va2", token=HF_TOKEN)
+model.push_to_hub("guerreropaula/translategemma4b-sft-es-va", token=HF_TOKEN)
+tokenizer.push_to_hub("guerreropaula/translategemma4b-sft-es-va", token=HF_TOKEN)
