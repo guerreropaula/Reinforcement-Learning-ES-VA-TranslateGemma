@@ -28,9 +28,9 @@ from transformers import AutoTokenizer, AutoModelForCausalLM, BitsAndBytesConfig
 
 HF_TOKEN        = ""
 BASE_MODEL_ID   = "google/translategemma-4b-it"
-SFT_MODEL_ID    = "guerreropaula/translategemma4b-sft-es-va2"
-GRPOV1_MODEL_ID = "guerreropaula/80translategemma4b-grpo-es-va"
-GRPOV2_MODEL_ID = "guerreropaula/translategemma4b-sft-es-va2"
+SFT_MODEL_ID    = "guerreropaula/translategemma4b-sft-es-va"
+GRPOV1_MODEL_ID = "guerreropaula/translategemma4b-grpov1-es-va"
+GRPOV2_MODEL_ID = "guerreropaula/translategemma4b-grpov2-es-va"
 
 SOURCE_LANG_CODE = "es"
 TARGET_LANG_CODE = "ca"
@@ -51,7 +51,7 @@ COLORS = {
     "grpov2":   "#2ca02c",
 }
 
-# CA → VA contrastive vocabulary
+# CA → VA 30-pair contrastive vocabulary
 CA_VA_FEATURES = {
     "aquesta": "esta", "quest": "este", "aquestes": "estes", "aquests": "estos",
     "seva": "seua", "seves": "seues", "darrer": "últim", "darrers": "últims",
