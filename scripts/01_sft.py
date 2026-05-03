@@ -1,7 +1,7 @@
-# =============================================================================
 # 01_sft.py
-# Supervised Fine-Tuning (SFT) of TranslateGemma-4B-IT for ES -> Valencian
-# =============================================================================
+# Supervised Fine-Tuning (SFT) of TranslateGemma-4B-IT for Spanish-Valencian
+# Paula Guerrero Castelló, May 2026
+# ---------------------------------------------------------------------------
 
 import gc
 import torch
@@ -23,9 +23,8 @@ from datasets import load_dataset
 from huggingface_hub import login
 
 
-# =============================================================================
 # Config
-# =============================================================================
+# ---------------------------------------------------------------------------
 
 HF_TOKEN       = ""
 MODEL_ID       = "google/translategemma-4b-it"
@@ -43,16 +42,11 @@ DEVICE   = "cuda" if torch.cuda.is_available() else "cpu"
 USE_BF16 = torch.cuda.is_bf16_supported()
 
 
-# =============================================================================
-# Login
-# =============================================================================
-
 login(token=HF_TOKEN)
 
 
-# =============================================================================
 # Model & Tokenizer
-# =============================================================================
+# ---------------------------------------------------------------------------
 
 print(f"PyTorch      : {torch.__version__}")
 print(f"transformers : {transformers.__version__}")
@@ -103,9 +97,8 @@ model = get_peft_model(base_model, lora_config)
 model.print_trainable_parameters()
 
 
-# =============================================================================
 # Prompt Template
-# =============================================================================
+# ---------------------------------------------------------------------------
 
 def _make_messages(source_text: str) -> list:
     """Build the user-turn message list for the TranslateGemma template."""
@@ -139,9 +132,8 @@ def make_inference_prompt(source_text: str) -> str:
     )
 
 
-# =============================================================================
 # Dataset
-# =============================================================================
+# ---------------------------------------------------------------------------
 
 raw_dataset = load_dataset("gplsi/amic_parallel")
 print(raw_dataset)
@@ -162,9 +154,8 @@ sft_dataset = raw_dataset.map(
 )
 
 
-# =============================================================================
 # Callbacks
-# =============================================================================
+# ---------------------------------------------------------------------------
 
 class LossPlotCallback(TrainerCallback):
     def __init__(self, save_path="sft_loss_curve.png"):
@@ -203,9 +194,8 @@ class Gemma3DataCollator:
         return batch
 
 
-# =============================================================================
 # Training
-# =============================================================================
+# ---------------------------------------------------------------------------
 
 model.train()
 
@@ -249,15 +239,3 @@ print(f"\nSFT training complete")
 print(f"VRAM max: {round(torch.cuda.max_memory_reserved()/1e9,2)} GB")
 print(f"Time     : {sft_stats.metrics['train_runtime']:.1f}s")
 print(f"Final Loss : {sft_stats.metrics.get('train_loss', 'N/A'):.4f}")
-
-
-# =============================================================================
-# Save & Push
-# =============================================================================
-
-model.save_pretrained(SFT_ADAPTER_DIR)
-tokenizer.save_pretrained(SFT_ADAPTER_DIR)
-print(f"LoRA adapter saved to: {SFT_ADAPTER_DIR}")
-
-model.push_to_hub("guerreropaula/translategemma4b-sft-es-va", token=HF_TOKEN)
-tokenizer.push_to_hub("guerreropaula/translategemma4b-sft-es-va", token=HF_TOKEN)
