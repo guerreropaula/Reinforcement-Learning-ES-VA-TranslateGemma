@@ -1,7 +1,7 @@
 # 03_grpo_v1.py
 # GRPO v1: chrF + HT/MT naturalness classifier
 # Paula Guerrero Castelló, May 2026
-# ---------------------------------------------------------------------------
+# --------------------------------------------------------------------------
 
 import gc
 import importlib
