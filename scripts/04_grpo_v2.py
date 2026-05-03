@@ -1,8 +1,7 @@
-# =============================================================================
 # 04_grpo_v2.py
-# GRPO v2 — Composite Automatic-Metric Reward (chrF + COMET + TTR + copy penalty)
-# Starting from SFT checkpoint: guerreropaula/translategemma4b-sft-es-va
-# =============================================================================
+# GRPO v2: composite metric Reward (chrF + COMET + TTR + copy penalty)
+# Paula Guerrero Castelló, May 2026
+# --------------------------------------------------------------------------
 
 import os
 import gc
@@ -24,14 +23,13 @@ from comet import download_model, load_from_checkpoint
 from huggingface_hub import login
 
 
-# =============================================================================
-# Config
-# =============================================================================
+
+# --- Config ------------------------------------------------------------
 
 HF_TOKEN      = ""
 BASE_MODEL_ID = "google/translategemma-4b-it"
-SFT_MODEL_ID  = "guerreropaula/translategemma4b-sft-es-va2"
-GRPO_HUB_ID   = "guerreropaula/translategemma4b-grpo2-es-va"
+SFT_MODEL_ID  = "guerreropaula/translategemma4b-sft-es-va"
+GRPO_HUB_ID   = "guerreropaula/translategemma4b-grpov2-es-va"
 OUTPUT_DIR    = "./translategemma4b_grpo_v2"
 BEST_CKPT     = "./translategemma4b_grpo/checkpoint-100"
 
