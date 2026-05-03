@@ -55,8 +55,8 @@ _reward_step_counter = {"step": 0}
 login(token=HF_TOKEN)
 
 
-# --- Model & tokenizer ------------------------------------------------------
 
+# --- Model & tokenizer ------------------------------------------------------
 
 print(f"PyTorch      : {torch.__version__}")
 print(f"transformers : {transformers.__version__}")
