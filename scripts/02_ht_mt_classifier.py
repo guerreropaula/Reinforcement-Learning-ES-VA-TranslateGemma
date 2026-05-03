@@ -1,7 +1,7 @@
-# =============================================================================
 # 02_ht_mt_classifier.py
-# HT vs. MT Binary Classifier — Softcatalà Spanish-Catalan Corpus
-# =============================================================================
+# HT vs. MT Binary Classifier
+# Paula Guerrero Castelló, May 2026
+# ---------------------------------------------------------------------------
 
 import os
 import gc
@@ -37,9 +37,8 @@ from transformers import (
 import evaluate
 
 
-# =============================================================================
-# Config
-# =============================================================================
+ 
+# ---- Config -----------------------------------------------------------
 
 HF_TOKEN     = ""
 MODEL_NAME   = "PlanTL-GOB-ES/roberta-base-ca"
@@ -63,9 +62,7 @@ BASE_URL = "https://github.com/Softcatala/parallel-catalan-corpus/raw/master/spa
 login(token=HF_TOKEN)
 
 
-# =============================================================================
-# Download Softcatalà Corpus
-# =============================================================================
+# --- Softcatalà corpus ------------------------------------------------------
 
 os.makedirs("data/raw", exist_ok=True)
 
@@ -85,9 +82,7 @@ for corpus in CORPORA:
                 break
 
 
-# =============================================================================
-# Load & Merge Corpora
-# =============================================================================
+# --- Load & merge corpora-------------------------------------------------------
 
 frames = []
 
@@ -130,9 +125,7 @@ print(f"Dataset after filtering and sampling: {len(df_balanced):,} pairs")
 print(df_balanced.corpus.value_counts())
 
 
-# =============================================================================
-# Generate MT Negative Examples
-# =============================================================================
+# --- Generate MT examples -----------------------------------------------------
 
 print("Loading Helsinki-NLP/opus-mt-es-ca...")
 helsinki_tok   = MarianTokenizer.from_pretrained(HELSINKI_MODEL)
@@ -207,9 +200,7 @@ torch.cuda.empty_cache()
 gc.collect()
 
 
-# =============================================================================
-# Build Classification Dataset
-# =============================================================================
+# --- Build dataset ---------------------------------------------
 
 ht_rows = df_balanced[["ca_human", "corpus"]].copy()
 ht_rows.columns = ["text", "corpus"]
@@ -236,9 +227,7 @@ val_df.to_csv("data/val.csv", index=False)
 df_clf.to_parquet("data/ht_mt_classifier_dataset.parquet", index=False)
 
 
-# =============================================================================
-# Tokenization
-# =============================================================================
+# --- Tokenization -----------------------------------------------------------
 
 tokenizer = AutoTokenizer.from_pretrained(MODEL_NAME)
 
@@ -261,9 +250,7 @@ train_tok.set_format("torch")
 val_tok.set_format("torch")
 
 
-# =============================================================================
-# Classifier Model & Metrics
-# =============================================================================
+# --- Classifier & metrics -----------------------------------------------------------
 
 clf_model = AutoModelForSequenceClassification.from_pretrained(
     MODEL_NAME,
@@ -289,9 +276,7 @@ def compute_metrics(eval_pred):
     }
 
 
-# =============================================================================
-# Callbacks
-# =============================================================================
+# --- Callbacks -----------------------------------------------------------
 
 class VerboseCallback(TrainerCallback):
     def __init__(self, tokenizer, val_dataset):
@@ -381,9 +366,7 @@ class LossPlotCallback(TrainerCallback):
         plt.close()
 
 
-# =============================================================================
-# Training
-# =============================================================================
+# --- Training -----------------------------------------------------------
 
 os.makedirs("./ht_mt_classifier", exist_ok=True)
 data_collator = DataCollatorWithPadding(tokenizer=tokenizer)
@@ -430,20 +413,8 @@ for k, v in results.items():
     print(f"  {k}: {v:.4f}")
 
 
-# =============================================================================
-# Save & Push
-# =============================================================================
 
-trainer.save_model(CLF_OUTPUT_DIR)
-tokenizer.save_pretrained(CLF_OUTPUT_DIR)
-print(f"Model saved to {CLF_OUTPUT_DIR}")
-
-trainer.push_to_hub("guerreropaula/ht_mt_classifier_best")
-
-
-# =============================================================================
-# External Test Set: gplsi/ES-VA_translation_test
-# =============================================================================
+# --- Translation test ---------------------------------------------------------
 
 test_hf = load_dataset("gplsi/ES-VA_translation_test", split="test")
 
@@ -515,28 +486,3 @@ ax.set_title("Confusion Matrix — gplsi/ES-VA_translation_test")
 plt.tight_layout()
 plt.savefig("confusion_matrix_gplsi.png", dpi=150)
 print("Saved → confusion_matrix_gplsi.png")
-
-
-# =============================================================================
-# translationese_reward — GRPO Integration
-# =============================================================================
-
-_clf_tok2   = AutoTokenizer.from_pretrained(CLF_REPO_ID)
-_clf_model2 = AutoModelForSequenceClassification.from_pretrained(CLF_REPO_ID).eval()
-if torch.cuda.is_available():
-    _clf_model2 = _clf_model2.cuda()
-
-
-@torch.no_grad()
-def translationese_reward(texts, batch_size=16):
-    """Returns P(HT | text) ∈ [0, 1] for each text. Use as r_t in GRPO."""
-    rewards = []
-    for i in range(0, len(texts), batch_size):
-        batch = texts[i:i+batch_size]
-        enc   = _clf_tok2(batch, return_tensors="pt", padding=True,
-                          truncation=True, max_length=256)
-        if torch.cuda.is_available():
-            enc = {k: v.cuda() for k, v in enc.items()}
-        probs = F.softmax(_clf_model2(**enc).logits, dim=-1)
-        rewards.extend(probs[:, HT_LABEL_IDX].cpu().tolist())
-    return rewards
