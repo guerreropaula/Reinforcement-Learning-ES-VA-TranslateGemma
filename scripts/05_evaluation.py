@@ -1,8 +1,8 @@
-# =============================================================================
 # 05_evaluation.py
-# Final Evaluation: Baseline vs. SFT vs. GRPOv1 vs. GRPOv2
-# Metrics: chrF, BLEU, TER, BLEURT, COMET + Dialectal Valencian Score (DVS)
-# =============================================================================
+# Final evaluation: baseline vs. SFT vs. GRPOv1 vs. GRPOv2
+# Metrics: chrF, BLEU, TER, BLEURT, COMET + dialectal valencian score (DVS)
+# Paula Guerrero Castelló, May 2026
+# --------------------------------------------------------------------------
 
 import re
 import gc
@@ -22,9 +22,7 @@ from peft import PeftModel
 from transformers import AutoTokenizer, AutoModelForCausalLM, BitsAndBytesConfig
 
 
-# =============================================================================
-# Config
-# =============================================================================
+# --- Config -------------------------------------------------------------
 
 HF_TOKEN        = ""
 BASE_MODEL_ID   = "google/translategemma-4b-it"
@@ -51,7 +49,6 @@ COLORS = {
     "grpov2":   "#2ca02c",
 }
 
-# CA → VA 30-pair contrastive vocabulary
 CA_VA_FEATURES = {
     "aquesta": "esta", "quest": "este", "aquestes": "estes", "aquests": "estos",
     "seva": "seua", "seves": "seues", "darrer": "últim", "darrers": "últims",
@@ -68,9 +65,7 @@ CA_VA_FEATURES = {
 login(token=HF_TOKEN)
 
 
-# =============================================================================
-# Setup
-# =============================================================================
+# --- Setup -------------------------------------------------------------
 
 bnb_config = BitsAndBytesConfig(
     load_in_4bit              = True,
@@ -85,9 +80,7 @@ comet_path  = download_model("Unbabel/wmt22-comet-da")
 comet_model = load_from_checkpoint(comet_path)
 
 
-# =============================================================================
-# Prompt Template
-# =============================================================================
+# --- Prompt template -------------------------------------------------------------
 
 def make_eval_prompt(tok, source_text: str) -> str:
     messages = [
@@ -106,9 +99,7 @@ def make_eval_prompt(tok, source_text: str) -> str:
     return tok.apply_chat_template(messages, tokenize=False, add_generation_prompt=True)
 
 
-# =============================================================================
-# Inference & Metrics
-# =============================================================================
+# --- Inference & metrics -------------------------------------------------------------
 
 def translate_all(model, tok, sources, refs, label):
     model.eval()
@@ -182,9 +173,7 @@ def evaluate_only(model, tokenizer, label="EVAL", n_samples=1000):
     return metrics, hyps, skipped
 
 
-# =============================================================================
-# Test Set
-# =============================================================================
+# --- Test set -------------------------------------------------------------
 
 eval_dataset = load_dataset("gplsi/ES-VA_translation_test", split="test")
 
@@ -199,9 +188,7 @@ print(f"Selected  : {len(gold_es)} sentences")
 print(f"Avg length: {sum(len(s) for s in gold_es) / len(gold_es):.1f} chars")
 
 
-# =============================================================================
-# Model 1 — Baseline
-# =============================================================================
+# --- 1.Baseline -------------------------------------------------------------
 
 tok_base   = AutoTokenizer.from_pretrained(BASE_MODEL_ID)
 model_base = AutoModelForCausalLM.from_pretrained(
@@ -224,9 +211,7 @@ torch.cuda.empty_cache()
 gc.collect()
 
 
-# =============================================================================
-# Model 2 — SFT
-# =============================================================================
+# --- 2.SFT -------------------------------------------------------------
 
 base_sft  = AutoModelForCausalLM.from_pretrained(
     BASE_MODEL_ID, quantization_config=bnb_config, device_map="auto"
@@ -251,9 +236,8 @@ torch.cuda.empty_cache()
 gc.collect()
 
 
-# =============================================================================
-# Model 3 — GRPOv1
-# =============================================================================
+
+# --- 3. GRPOv1 -------------------------------------------------------------
 
 tok_grpov1   = AutoTokenizer.from_pretrained(GRPOV1_MODEL_ID)
 model_grpov1 = AutoModelForCausalLM.from_pretrained(
@@ -277,9 +261,8 @@ torch.cuda.empty_cache()
 gc.collect()
 
 
-# =============================================================================
-# Model 4 — GRPOv2
-# =============================================================================
+
+# --- 4.GRPOv2 -------------------------------------------------------------
 
 base_model = AutoModelForCausalLM.from_pretrained(
     BASE_MODEL_ID, quantization_config=bnb_config, device_map="auto"
@@ -303,9 +286,7 @@ torch.cuda.empty_cache()
 gc.collect()
 
 
-# =============================================================================
-# Summary Table
-# =============================================================================
+# --- Summary -------------------------------------------------------------
 
 all_metrics = [m_base, m_sft, m_grpov1, m_grpov2]
 hyps_all    = {
@@ -347,9 +328,7 @@ with open("eval_results_combined.json", "w", encoding="utf-8") as f:
     }, f, ensure_ascii=False, indent=2)
 
 
-# =============================================================================
-# Dialectal Valencian Score (DVS)
-# =============================================================================
+# --- Dialectal valencian score-------------------------------------------------------------
 
 def dialectal_score(hypotheses, label):
     valid_hyps = [h.lower() for h in hypotheses if h not in ("[SKIPPED]", "[EMPTY]", None)]
@@ -384,9 +363,6 @@ for model_key in MODELS:
     scores[model_key], feats[model_key] = dialectal_score(hyps_all[model_key], model_key.upper())
 
 
-# =============================================================================
-# DVS Bar Chart
-# =============================================================================
 
 fig, ax = plt.subplots(figsize=(7, 4.5))
 vals     = [scores[m]*100 for m in MODELS]
@@ -410,10 +386,6 @@ plt.close()
 print("Saved: fig_dialectal_score.png")
 
 
-# =============================================================================
-# Per-Feature Breakdown
-# =============================================================================
-
 rows = []
 for ca, va in CA_VA_FEATURES.items():
     row = {"CA form": ca, "VA form": va}
@@ -427,9 +399,6 @@ df_feat = pd.DataFrame(rows).sort_values("CA form")
 print(df_feat.to_string(index=False))
 
 
-# =============================================================================
-# Export Dialect Summary
-# =============================================================================
 
 dialect_summary = {
     "dataset": "gplsi/ES-VA_translation_test",
