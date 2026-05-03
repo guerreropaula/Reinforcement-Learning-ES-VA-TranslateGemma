@@ -53,9 +53,7 @@ login(token=HF_TOKEN)
 print(f"device: {DEVICE} | bf16: {USE_BF16}")
 
 
-# =============================================================================
-# Model & Tokenizer
-# =============================================================================
+# --- Model & tokenizer ------------------------------------------------------------
 
 print(f"torch        : {torch.__version__}")
 print(f"transformers : {transformers.__version__}")
@@ -94,9 +92,7 @@ model = prepare_model_for_kbit_training(model)
 model.print_trainable_parameters()
 
 
-# =============================================================================
-# Prompt Template
-# =============================================================================
+# --- Prompt template ------------------------------------------------------------
 
 def _make_messages(source_text: str) -> list:
     return [
@@ -120,9 +116,7 @@ def make_inference_prompt(source_text: str) -> str:
     )
 
 
-# =============================================================================
-# GRPO Dataset
-# =============================================================================
+# --- GRPO Dataset ------------------------------------------------------------
 
 raw = load_dataset("gplsi/amic_parallel")
 
@@ -143,9 +137,7 @@ grpo_dataset = (
 )
 
 
-# =============================================================================
-# COMET
-# =============================================================================
+# --- COMET ------------------------------------------------------------
 
 comet_model = None
 if LOCAL_RANK == 0:
@@ -156,9 +148,7 @@ if IS_DISTRIBUTED:
     dist.barrier()
 
 
-# =============================================================================
-# Reward Functions
-# =============================================================================
+# --- Reward functions------------------------------------------------------------
 
 def chrf_score(hypothesis: str, reference: str) -> float:
     if not hypothesis or not reference:
@@ -227,9 +217,7 @@ def composite_reward(
     return rewards
 
 
-# =============================================================================
-# Training Callback
-# =============================================================================
+# --- Callback ------------------------------------------------------------
 
 class RewardPlotCallback(TrainerCallback):
     def __init__(self, save_path="grpo_reward_curve.png"):
@@ -254,9 +242,8 @@ class RewardPlotCallback(TrainerCallback):
             plt.close()
 
 
-# =============================================================================
-# GRPO Training
-# =============================================================================
+
+# --- GRPO Training ------------------------------------------------------------
 
 grpo_config = GRPOConfig(
     max_completion_length       = 128,
@@ -297,9 +284,7 @@ stats = trainer.train()
 print(f"Training complete. Final mean reward: {stats.metrics.get('train_reward', 'N/A')}")
 
 
-# =============================================================================
-# Checkpoint Summary
-# =============================================================================
+# --- Checkpoint summary ------------------------------------------------------------
 
 checkpoints = sorted([
     d for d in os.listdir(OUTPUT_DIR)
@@ -317,30 +302,8 @@ for ckpt in checkpoints:
         print(f"{ckpt}  →  step {step}  reward {reward}")
 
 
-# =============================================================================
-# Save & Push Best Checkpoint
-# =============================================================================
 
-base_model_reload = AutoModelForCausalLM.from_pretrained(
-    BASE_MODEL_ID,
-    torch_dtype = torch.bfloat16 if USE_BF16 else torch.float16,
-    device_map  = "cuda",
-)
-
-peft_model    = PeftModel.from_pretrained(base_model_reload, BEST_CKPT)
-merged_model  = peft_model.merge_and_unload()
-
-merged_model.push_to_hub(
-    "guerreropaula/translategemma4b-grpov2-es-va",
-    safe_serialization = True,
-    max_shard_size     = "2GB",
-)
-tokenizer.push_to_hub("guerreropaula/translategemma4b-grpov2-es-va")
-
-
-# =============================================================================
-# Quick Evaluation
-# =============================================================================
+# -- Quick Evaluation ------------------------------------------------------------
 
 N_QUICK = 100
 test_ds = ld("gplsi/ES-VA_translation_test", split="test").select(range(N_QUICK))
