@@ -1,8 +1,7 @@
-# =============================================================================
 # 03_grpo_v1.py
-# GRPO v1 — chrF + HT/MT Naturalness Classifier Reward
-# Starting from SFT checkpoint: guerreropaula/translategemma4b-sft-es-va
-# =============================================================================
+# GRPO v1: chrF + HT/MT naturalness classifier
+# Paula Guerrero Castelló, May 2026
+# ---------------------------------------------------------------------------
 
 import gc
 import importlib
@@ -29,13 +28,11 @@ from huggingface_hub import login
 import transformers.models.gemma3.modeling_gemma3 as gemma3_module
 
 
-# =============================================================================
-# Config
-# =============================================================================
+# ---- Config -----------------------------------------------------------
 
 HF_TOKEN       = ""
 BASE_MODEL_ID  = "google/translategemma-4b-it"
-SFT_MODEL_ID   = "guerreropaula/translategemma4b-sft-es-va2"
+SFT_MODEL_ID   = "guerreropaula/translategemma4b-sft-es-va"
 CLF_REPO_ID    = "guerreropaula/ht_mt_classifier_best"
 GRPO_OUTPUT_DIR = "./translategemma4b_grpo_es_va"
 
@@ -58,9 +55,8 @@ _reward_step_counter = {"step": 0}
 login(token=HF_TOKEN)
 
 
-# =============================================================================
-# Model & Tokenizer
-# =============================================================================
+# --- Model & tokenizer ------------------------------------------------------
+
 
 print(f"PyTorch      : {torch.__version__}")
 print(f"transformers : {transformers.__version__}")
@@ -97,9 +93,8 @@ model = PeftModel.from_pretrained(base_model, SFT_MODEL_ID, is_trainable=True, t
 model.print_trainable_parameters()
 
 
-# =============================================================================
-# Prompt Template
-# =============================================================================
+
+# --- Prompt Template ----------------------------------------------------------
 
 def _make_messages(source_text: str) -> list:
     return [
@@ -123,9 +118,7 @@ def make_inference_prompt(source_text: str) -> str:
     )
 
 
-# =============================================================================
-# GRPO Dataset
-# =============================================================================
+# --- GRPO Dataset ------------------------------------------------------------
 
 raw_dataset = load_dataset("gplsi/amic_parallel")
 
@@ -145,9 +138,7 @@ grpo_dataset = grpo_raw.map(
 )
 
 
-# =============================================================================
-# Reward Functions
-# =============================================================================
+# --- Reward Functions ----------------------------------------------------------------
 
 _clf_tok   = AutoTokenizer.from_pretrained(CLF_REPO_ID)
 _clf_model = AutoModelForSequenceClassification.from_pretrained(CLF_REPO_ID)
@@ -199,13 +190,8 @@ def composite_reward(hypotheses: List[str], references: List[str]) -> List[float
     ]
 
 
-# =============================================================================
-# Gemma3 Patches
-# =============================================================================
-
 importlib.reload(gemma3_module)
 gemma3_module._true_original_mask_fn = gemma3_module.create_causal_mask_mapping
-
 
 def _patched_mask_fn(config, input_embeds, attention_mask, cache_position,
                      past_key_values, position_ids, token_type_ids=None,
@@ -237,9 +223,8 @@ if not getattr(_ModelClass, "_forward_patched", False):
     _ModelClass._forward_patched = True
 
 
-# =============================================================================
-# Reward Wrapper & Callbacks
-# =============================================================================
+
+# --- Reward wrapper ------------------------------------------------------- 
 
 model.train()
 
@@ -310,9 +295,9 @@ class SampleLoggerCallback(TrainerCallback):
         self.model.train()
 
 
-# =============================================================================
-# GRPO Training
-# =============================================================================
+
+# --- GRPO training -------------------------------------------------------------
+
 
 grpo_config = GRPOConfig(
     per_device_train_batch_size = 1,
@@ -354,18 +339,3 @@ grpo_stats = grpo_trainer.train()
 print(f"\nGRPO training complete")
 print(f"VRAM max: {round(torch.cuda.max_memory_reserved()/1e9,2)} GB")
 print(f"Time     : {grpo_stats.metrics['train_runtime']:.1f}s")
-
-
-# =============================================================================
-# Save & Push
-# =============================================================================
-
-MERGED_DIR = GRPO_OUTPUT_DIR + "_merged"
-
-merged = model.merge_and_unload()
-merged.save_pretrained(MERGED_DIR)
-tokenizer.save_pretrained(MERGED_DIR)
-print(f"Merged model saved to: {MERGED_DIR}")
-
-merged.push_to_hub("guerreropaula/translategemma4b-grpov1-es-va", token=HF_TOKEN)
-tokenizer.push_to_hub("guerreropaula/translategemma4b-grpov1-es-va", token=HF_TOKEN)
