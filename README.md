@@ -1,5 +1,9 @@
 # Enhancing LLM Translation Performance for Spanish–Valencian through Supervised Fine-Tuning and Reinforcement Learning
 
+
+[![Paper](https://img.shields.io/badge/Paper-PDF-red)](paper/paper.pdf)
+[![Models](https://img.shields.io/badge/HuggingFace-Models-yellow)](https://huggingface.co/collections/guerreropaula/spanish-valencian-mt-rl)
+
 > **EAMT 2026** · University of the Basque Country (UPV/EHU)  
 > Paula Guerrero Castelló · `pguerrero005@ikasle.ehu.eus`
 
