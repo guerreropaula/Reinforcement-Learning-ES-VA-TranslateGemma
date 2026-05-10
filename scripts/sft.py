@@ -1,4 +1,4 @@
-# 01_sft.py
+# sft.py
 # Supervised Fine-Tuning (SFT) of TranslateGemma-4B-IT for Spanish-Valencian
 # Paula Guerrero Castelló, May 2026
 # ---------------------------------------------------------------------------
@@ -25,39 +25,39 @@ from datasets import load_dataset
 from huggingface_hub import login
 
 
-# Config
-# ---------------------------------------------------------------------------
 
-HF_TOKEN       = ""
-MODEL_ID       = "google/translategemma-4b-it"
-MAX_SEQ_LENGTH = 256
-SFT_TRAIN_SAMPLES = 50_000
-OUTPUT_ROOT       = "./outputs"
-SFT_RUN_DIR       = os.path.join(OUTPUT_ROOT, "sft")
-SFT_OUTPUT_DIR    = os.path.join(SFT_RUN_DIR, "checkpoints")
-SFT_BEST_MODEL_DIR = os.path.join(SFT_RUN_DIR, "best_model")
-SFT_VAL_SPLIT     = 0.02
-SFT_VAL_SAMPLES   = 200
-SFT_VAL_EVERY_STEPS = 100
+# ------- Config -----------------------------------------------------------
 
-SOURCE_LANG_CODE = "es"
-TARGET_LANG_CODE = "ca"
-SOURCE_COL       = "ES"
-TARGET_COL       = "VA"
+hf_token = ""
+model_id = "google/translategemma-4b-it"
+max_seq_length = 256
+sft_train_samples = 50_000
+output_root = "./outputs"
+sft_run_dir = os.path.join(output_root, "sft")
+sft_output_dir = os.path.join(sft_run_dir, "checkpoints")
+sft_best_model_dir = os.path.join(sft_run_dir, "best_model")
+sft_val_split = 0.02
+sft_val_samples = 200
+sft_val_every_steps = 100
 
-DEVICE   = "cuda" if torch.cuda.is_available() else "cpu"
-USE_BF16 = torch.cuda.is_bf16_supported()
+source_lang_code = "es"
+target_lang_code = "ca"
+source_col = "ES"
+target_col = "VA"
 
-
-if HF_TOKEN:
-    login(token=HF_TOKEN)
-
-os.makedirs(SFT_OUTPUT_DIR, exist_ok=True)
-os.makedirs(SFT_BEST_MODEL_DIR, exist_ok=True)
+device = "cuda" if torch.cuda.is_available() else "cpu"
+use_bf16 = torch.cuda.is_bf16_supported()
 
 
-# Model & Tokenizer
-# ---------------------------------------------------------------------------
+if hf_token:
+    login(token=hf_token)
+
+os.makedirs(sft_output_dir, exist_ok=True)
+os.makedirs(sft_best_model_dir, exist_ok=True)
+
+
+
+# --------- Model & tokenizer ---------------------------------------
 
 print(f"PyTorch      : {torch.__version__}")
 print(f"transformers : {transformers.__version__}")
@@ -72,24 +72,24 @@ bnb_config = BitsAndBytesConfig(
     load_in_4bit              = True,
     bnb_4bit_use_double_quant = True,
     bnb_4bit_quant_type       = "nf4",
-    bnb_4bit_compute_dtype    = torch.bfloat16 if USE_BF16 else torch.float16,
+    bnb_4bit_compute_dtype    = torch.bfloat16 if use_bf16 else torch.float16,
 )
 
-tokenizer = AutoTokenizer.from_pretrained(MODEL_ID, token=HF_TOKEN)
+tokenizer = AutoTokenizer.from_pretrained(model_id, token=hf_token)
 if tokenizer.pad_token is None:
     tokenizer.pad_token = tokenizer.eos_token
 tokenizer.padding_side = "right"
 
 base_model = AutoModelForCausalLM.from_pretrained(
-    MODEL_ID,
+    model_id,
     quantization_config = bnb_config,
     device_map          = "auto",
-    token               = HF_TOKEN,
-    dtype               = torch.bfloat16 if USE_BF16 else torch.float16,
+    token               = hf_token,
+    dtype               = torch.bfloat16 if use_bf16 else torch.float16,
     trust_remote_code   = True,
 )
 
-print(f"Model  : {MODEL_ID}")
+print(f"Model  : {model_id}")
 print(f"Params : {sum(p.numel() for p in base_model.parameters()) / 1e6:.0f}M")
 
 base_model = prepare_model_for_kbit_training(base_model)
@@ -108,9 +108,7 @@ model = get_peft_model(base_model, lora_config)
 model.print_trainable_parameters()
 
 
-# Prompt Template
-# ---------------------------------------------------------------------------
-
+# ------ Prompt template ---------------------------------------------------
 def _make_messages(source_text: str) -> list:
     """Build the user-turn message list for the TranslateGemma template."""
     return [
@@ -119,8 +117,8 @@ def _make_messages(source_text: str) -> list:
             "content": [
                 {
                     "type"             : "text",
-                    "source_lang_code" : SOURCE_LANG_CODE,
-                    "target_lang_code" : TARGET_LANG_CODE,
+                    "source_lang_code" : source_lang_code,
+                    "target_lang_code" : target_lang_code,
                     "text"             : source_text,
                 }
             ],
@@ -143,11 +141,10 @@ def make_inference_prompt(source_text: str) -> str:
     )
 
 
-# Dataset
-# ---------------------------------------------------------------------------
 
+# ------- Dataset --------------------------------------------------------
 raw_dataset = load_dataset("gplsi/amic_parallel")
-dataset_split = raw_dataset["train"].train_test_split(test_size=SFT_VAL_SPLIT, seed=42)
+dataset_split = raw_dataset["train"].train_test_split(test_size=sft_val_split, seed=42)
 train_raw = dataset_split["train"]
 val_raw = dataset_split["test"]
 print(dataset_split)
@@ -157,7 +154,7 @@ print("\nExample:", train_raw[0])
 def formatting_prompts_func(examples):
     return {"text": [
         format_for_sft(src, tgt)
-        for src, tgt in zip(examples[SOURCE_COL], examples[TARGET_COL])
+        for src, tgt in zip(examples[source_col], examples[target_col])
     ]}
 
 
@@ -166,12 +163,12 @@ sft_train_dataset = train_raw.map(
     batched        = True,
     remove_columns = train_raw.column_names,
 )
-val_limit = min(SFT_VAL_SAMPLES, len(val_raw))
+val_limit = min(sft_val_samples, len(val_raw))
 val_samples = val_raw.select(range(val_limit))
 
 
-# Callbacks
-# ---------------------------------------------------------------------------
+
+# ------- Callbacks ------------------------------------------------
 
 class LossPlotCallback(TrainerCallback):
     def __init__(self, save_path="sft_loss_curve.png"):
@@ -208,12 +205,12 @@ class BleuEvalSaveCallback(TrainerCallback):
         hyps, refs = [], []
         self.model.eval()
         for sample in self.eval_samples:
-            prompt = make_inference_prompt(sample[SOURCE_COL])
+            prompt = make_inference_prompt(sample[source_col])
             inputs = self.tokenizer(
                 prompt,
                 return_tensors="pt",
                 truncation=True,
-                max_length=MAX_SEQ_LENGTH,
+                max_length=max_seq_length,
             ).to(self.model.device)
             with torch.no_grad():
                 output_ids = self.model.generate(
@@ -224,7 +221,7 @@ class BleuEvalSaveCallback(TrainerCallback):
                 )
             new_tokens = output_ids[0][inputs["input_ids"].shape[1]:]
             hyps.append(self.tokenizer.decode(new_tokens, skip_special_tokens=True).strip())
-            refs.append(sample[TARGET_COL])
+            refs.append(sample[target_col])
         bleu = sacrebleu.corpus_bleu(hyps, [refs]).score
         self.model.train()
         return bleu
@@ -263,8 +260,8 @@ class Gemma3DataCollator:
         return batch
 
 
-# Training
-# ---------------------------------------------------------------------------
+
+# ------ SFT training ---------------------------------------------------
 
 model.train()
 
@@ -272,7 +269,7 @@ sft_trainer = SFTTrainer(
     model            = model,
     processing_class = tokenizer,
     train_dataset    = sft_train_dataset.shuffle(seed=42).select(
-        range(min(SFT_TRAIN_SAMPLES, len(sft_train_dataset)))
+        range(min(sft_train_samples, len(sft_train_dataset)))
     ),
     data_collator    = Gemma3DataCollator(tokenizer),
     callbacks        = [
@@ -281,8 +278,8 @@ sft_trainer = SFTTrainer(
             tokenizer=tokenizer,
             model=model,
             eval_samples=val_samples,
-            save_dir=SFT_BEST_MODEL_DIR,
-            every_n_steps=SFT_VAL_EVERY_STEPS,
+            save_dir=sft_best_model_dir,
+            every_n_steps=sft_val_every_steps,
         ),
     ],
     args = SFTConfig(
@@ -297,11 +294,11 @@ sft_trainer = SFTTrainer(
         weight_decay                = 0.001,
         lr_scheduler_type           = "cosine",
         seed                        = 3407,
-        output_dir                  = SFT_OUTPUT_DIR,
+        output_dir                  = sft_output_dir,
         save_steps                  = 25,
         report_to                   = "none",
-        fp16                        = not USE_BF16,
-        bf16                        = USE_BF16,
+        fp16                        = not use_bf16,
+        bf16                        = use_bf16,
         gradient_checkpointing      = True,
         dataloader_num_workers      = 2,
     ),

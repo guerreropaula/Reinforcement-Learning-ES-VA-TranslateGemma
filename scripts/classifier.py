@@ -40,44 +40,44 @@ import evaluate
  
 # ---- Config -----------------------------------------------------------
 
-HF_TOKEN     = ""
-MODEL_NAME   = "PlanTL-GOB-ES/roberta-base-ca"
-HELSINKI_MODEL = "Helsinki-NLP/opus-mt-es-ca"
-NLLB_MODEL     = "facebook/nllb-200-distilled-600M"
-CLF_REPO_ID    = "guerreropaula/ht_mt_classifier_best"
-OUTPUT_ROOT    = "./outputs"
-CLASSIFIER_RUN_DIR = os.path.join(OUTPUT_ROOT, "classifier")
-CLF_OUTPUT_DIR = os.path.join(CLASSIFIER_RUN_DIR, "best_model")
-HT_LABEL_IDX   = 1
-TRAINING_OUTPUT_DIR = os.path.join(CLASSIFIER_RUN_DIR, "checkpoints")
+hf_token     = ""
+model_name   = "PlanTL-GOB-ES/roberta-base-ca"
+helsinki_model_name = "Helsinki-NLP/opus-mt-es-ca"
+nllb_model_name     = "facebook/nllb-200-distilled-600M"
+clf_repo_id    = "guerreropaula/ht_mt_classifier_best"
+output_root    = "./outputs"
+classifier_run_dir = os.path.join(output_root, "classifier")
+clf_output_dir = os.path.join(classifier_run_dir, "best_model")
+ht_label_idx   = 1
+training_output_dir = os.path.join(classifier_run_dir, "checkpoints")
 
-MAX_PER_CORPUS = 20_000
-DEVICE = 0 if torch.cuda.is_available() else -1
+max_per_corpus = 20_000
+device = 0 if torch.cuda.is_available() else -1
 
-CORPORA = [
+corpora = [
     "TildeMODEL.es-ca",
     "dogc-es-ca",
     "europarl.es-ca",
 ]
 
-BASE_URL = "https://github.com/Softcatala/parallel-catalan-corpus/raw/master/spa-cat/"
+base_url = "https://github.com/Softcatala/parallel-catalan-corpus/raw/master/spa-cat/"
 
-if HF_TOKEN:
-    login(token=HF_TOKEN)
+if hf_token:
+    login(token=hf_token)
 
-os.makedirs(TRAINING_OUTPUT_DIR, exist_ok=True)
-os.makedirs(CLF_OUTPUT_DIR, exist_ok=True)
+os.makedirs(training_output_dir, exist_ok=True)
+os.makedirs(clf_output_dir, exist_ok=True)
 
 
 # --- Softcatalà corpus ------------------------------------------------------
 
 os.makedirs("data/raw", exist_ok=True)
 
-for corpus in CORPORA:
+for corpus in corpora:
     for lang in ["es", "ca"]:
         fname = f"{corpus}.{lang}"
         for ext in [".xz", ""]:
-            url = BASE_URL + fname + ext
+            url = base_url + fname + ext
             out = f"data/raw/{fname}{ext}"
             if not os.path.exists(out.replace(".xz", "")):
                 r = subprocess.run(["wget", "-q", "-O", out, url])
@@ -93,7 +93,7 @@ for corpus in CORPORA:
 
 frames = []
 
-for corpus in CORPORA:
+for corpus in corpora:
     es_path = f"data/raw/{corpus}.es"
     ca_path = f"data/raw/{corpus}.ca"
     if os.path.exists(es_path) and os.path.exists(ca_path):
@@ -124,7 +124,7 @@ df_all = df_all[
 
 df_balanced = (
     df_all.groupby("corpus", group_keys=False)
-    .apply(lambda x: x.sample(min(len(x), MAX_PER_CORPUS), random_state=42))
+    .apply(lambda x: x.sample(min(len(x), max_per_corpus), random_state=42))
     .reset_index(drop=True)
 )
 df_balanced = df_balanced.sample(frac=1, random_state=42).reset_index(drop=True)
@@ -135,20 +135,20 @@ print(df_balanced.corpus.value_counts())
 # --- Generate MT examples -----------------------------------------------------
 
 print("Loading Helsinki-NLP/opus-mt-es-ca...")
-helsinki_tok   = MarianTokenizer.from_pretrained(HELSINKI_MODEL)
-helsinki_model = MarianMTModel.from_pretrained(HELSINKI_MODEL)
-if DEVICE == 0:
+helsinki_tok   = MarianTokenizer.from_pretrained(helsinki_model_name)
+helsinki_model = MarianMTModel.from_pretrained(helsinki_model_name)
+if device == 0:
     helsinki_model = helsinki_model.cuda()
 helsinki_model.eval()
 
 print("\nLoading facebook/nllb-200-distilled-600M...")
-nllb_tok   = AutoTokenizer.from_pretrained(NLLB_MODEL)
-nllb_model = AutoModelForSeq2SeqLM.from_pretrained(NLLB_MODEL)
-if DEVICE == 0:
+nllb_tok   = AutoTokenizer.from_pretrained(nllb_model_name)
+nllb_model = AutoModelForSeq2SeqLM.from_pretrained(nllb_model_name)
+if device == 0:
     nllb_model = nllb_model.cuda()
 nllb_model.eval()
-CAT_TOKEN_ID = nllb_tok.convert_tokens_to_ids("cat_Latn")
-print(f"NLLB model ready — cat_Latn token id: {CAT_TOKEN_ID}")
+cat_token_id = nllb_tok.convert_tokens_to_ids("cat_Latn")
+print(f"NLLB model ready — cat_Latn token id: {cat_token_id}")
 
 
 @torch.no_grad()
@@ -158,7 +158,7 @@ def batch_translate_helsinki(texts: list, batch_size: int = 64) -> list:
         batch = texts[i : i + batch_size]
         tok   = helsinki_tok(batch, return_tensors="pt", padding=True,
                              truncation=True, max_length=256)
-        if DEVICE == 0:
+        if device == 0:
             tok = {k: v.cuda() for k, v in tok.items()}
         out = helsinki_model.generate(**tok, max_length=256)
         results.extend(helsinki_tok.batch_decode(out, skip_special_tokens=True))
@@ -173,9 +173,9 @@ def batch_translate_nllb(texts: list, batch_size: int = 32) -> list:
         batch = texts[i : i + batch_size]
         tok   = nllb_tok(batch, return_tensors="pt", padding=True,
                          truncation=True, max_length=256)
-        if DEVICE == 0:
+        if device == 0:
             tok = {k: v.cuda() for k, v in tok.items()}
-        out = nllb_model.generate(**tok, forced_bos_token_id=CAT_TOKEN_ID, max_length=256)
+        out = nllb_model.generate(**tok, forced_bos_token_id=cat_token_id, max_length=256)
         results.extend(nllb_tok.batch_decode(out, skip_special_tokens=True))
     return results
 
@@ -236,7 +236,7 @@ df_clf.to_parquet("data/ht_mt_classifier_dataset.parquet", index=False)
 
 # --- Tokenization -----------------------------------------------------------
 
-tokenizer = AutoTokenizer.from_pretrained(MODEL_NAME)
+tokenizer = AutoTokenizer.from_pretrained(model_name)
 
 
 def tokenize(batch):
@@ -260,7 +260,7 @@ val_tok.set_format("torch")
 # --- Classifier & metrics -----------------------------------------------------------
 
 clf_model = AutoModelForSequenceClassification.from_pretrained(
-    MODEL_NAME,
+    model_name,
     num_labels = 2,
     id2label   = {0: "MT", 1: "HT"},
     label2id   = {"MT": 0, "HT": 1},
@@ -375,11 +375,11 @@ class LossPlotCallback(TrainerCallback):
 
 # --- Training -----------------------------------------------------------
 
-os.makedirs(TRAINING_OUTPUT_DIR, exist_ok=True)
+os.makedirs(training_output_dir, exist_ok=True)
 data_collator = DataCollatorWithPadding(tokenizer=tokenizer)
 
 training_args = TrainingArguments(
-    output_dir                  = TRAINING_OUTPUT_DIR,
+    output_dir                  = training_output_dir,
     num_train_epochs            = 5,
     per_device_train_batch_size = 32,
     per_device_eval_batch_size  = 32,
@@ -413,8 +413,8 @@ trainer = Trainer(
 
 print("Starting training...")
 trainer.train()
-trainer.save_model(CLF_OUTPUT_DIR)
-tokenizer.save_pretrained(CLF_OUTPUT_DIR)
+trainer.save_model(clf_output_dir)
+tokenizer.save_pretrained(clf_output_dir)
 
 results = trainer.evaluate()
 print("\nValidation results:")
@@ -427,12 +427,12 @@ for k, v in results.items():
 
 test_hf = load_dataset("gplsi/ES-VA_translation_test", split="test")
 
-nllb_tok_test   = AutoTokenizer.from_pretrained(NLLB_MODEL)
-nllb_model_test = AutoModelForSeq2SeqLM.from_pretrained(NLLB_MODEL)
-if DEVICE == 0:
+nllb_tok_test   = AutoTokenizer.from_pretrained(nllb_model_name)
+nllb_model_test = AutoModelForSeq2SeqLM.from_pretrained(nllb_model_name)
+if device == 0:
     nllb_model_test = nllb_model_test.cuda()
 nllb_model_test.eval()
-CAT_TOKEN_ID_TEST = nllb_tok_test.convert_tokens_to_ids("cat_Latn")
+cat_token_id_test = nllb_tok_test.convert_tokens_to_ids("cat_Latn")
 
 
 @torch.no_grad()
@@ -443,10 +443,10 @@ def translate_nllb_test(texts: list, batch_size: int = 32) -> list:
         batch = texts[i : i + batch_size]
         tok   = nllb_tok_test(batch, return_tensors="pt", padding=True,
                               truncation=True, max_length=256)
-        if DEVICE == 0:
+        if device == 0:
             tok = {k: v.cuda() for k, v in tok.items()}
         out = nllb_model_test.generate(
-            **tok, forced_bos_token_id=CAT_TOKEN_ID_TEST, max_length=256
+            **tok, forced_bos_token_id=cat_token_id_test, max_length=256
         )
         results.extend(nllb_tok_test.batch_decode(out, skip_special_tokens=True))
     return results
@@ -470,8 +470,8 @@ gc.collect()
 
 clf_pipe = hf_pipeline(
     "text-classification",
-    model       = CLF_OUTPUT_DIR,
-    tokenizer   = CLF_OUTPUT_DIR,
+    model       = clf_output_dir,
+    tokenizer   = clf_output_dir,
     device      = 0 if torch.cuda.is_available() else -1,
     truncation  = True,
     max_length  = 128,

@@ -1,4 +1,4 @@
-# 04_grpo_v2.py
+# grpov2.py
 # GRPO v2: composite metric Reward (chrF + COMET + TTR + copy penalty)
 # Paula Guerrero Castelló, May 2026
 # --------------------------------------------------------------------------
@@ -26,39 +26,39 @@ from huggingface_hub import login
 
 # --- Config ------------------------------------------------------------
 
-HF_TOKEN      = ""
-BASE_MODEL_ID = "google/translategemma-4b-it"
-SFT_MODEL_ID  = "guerreropaula/translategemma4b-sft-es-va"
-GRPO_HUB_ID   = "guerreropaula/translategemma4b-grpov2-es-va"
-OUTPUT_ROOT   = "./outputs"
-GRPO_RUN_DIR  = os.path.join(OUTPUT_ROOT, "grpov2")
-OUTPUT_DIR    = os.path.join(GRPO_RUN_DIR, "checkpoints")
-BEST_MODEL_DIR = os.path.join(GRPO_RUN_DIR, "best_model")
+hf_token = ""
+base_model_id = "google/translategemma-4b-it"
+sft_model_id  = "guerreropaula/translategemma4b-sft-es-va"
+grpo_hub_id   = "guerreropaula/translategemma4b-grpov2-es-va"
+output_root   = "./outputs"
+grpo_run_dir  = os.path.join(output_root, "grpov2")
+output_dir    = os.path.join(grpo_run_dir, "checkpoints")
+best_model_dir = os.path.join(grpo_run_dir, "best_model")
 
-SOURCE_LANG_CODE = "es"
-TARGET_LANG_CODE = "ca"
-SOURCE_COL       = "ES"
-TARGET_COL       = "VA"
+source_lang_code = "es"
+target_lang_code = "ca"
+source_col       = "ES"
+target_col       = "VA"
 
-DEVICE   = "cuda" if torch.cuda.is_available() else "cpu"
-USE_BF16 = torch.cuda.is_bf16_supported()
+device   = "cuda" if torch.cuda.is_available() else "cpu"
+use_bf16 = torch.cuda.is_bf16_supported()
 
-N_TRAIN  = 10_000
-W_CHRF   = 0.5
-W_COMET  = 0.3
-W_TTR    = 0.2
-GRPO_VAL_SPLIT = 0.02
-GRPO_VAL_SAMPLES = 200
-GRPO_VAL_EVERY_STEPS = 20
+n_train  = 10_000
+w_chrf   = 0.5
+w_comet  = 0.3
+w_ttr    = 0.2
+grpo_val_split = 0.02
+grpo_val_samples = 200
+grpo_val_every_steps = 20
 
-LOCAL_RANK     = int(os.environ.get("LOCAL_RANK", 0))
-IS_DISTRIBUTED = dist.is_initialized()
+local_rank     = int(os.environ.get("LOCAL_RANK", 0))
+is_distributed = dist.is_initialized()
 
-if HF_TOKEN:
-    login(token=HF_TOKEN)
-os.makedirs(OUTPUT_DIR, exist_ok=True)
-os.makedirs(BEST_MODEL_DIR, exist_ok=True)
-print(f"device: {DEVICE} | bf16: {USE_BF16}")
+if hf_token:
+    login(token=hf_token)
+os.makedirs(output_dir, exist_ok=True)
+os.makedirs(best_model_dir, exist_ok=True)
+print(f"device: {device} | bf16: {use_bf16}")
 
 
 # --- Model & tokenizer ------------------------------------------------------------
@@ -73,27 +73,27 @@ bnb_config = BitsAndBytesConfig(
     load_in_4bit              = True,
     bnb_4bit_use_double_quant = True,
     bnb_4bit_quant_type       = "nf4",
-    bnb_4bit_compute_dtype    = torch.bfloat16 if USE_BF16 else torch.float16,
+    bnb_4bit_compute_dtype    = torch.bfloat16 if use_bf16 else torch.float16,
 )
 
-tokenizer = AutoTokenizer.from_pretrained(BASE_MODEL_ID, token=HF_TOKEN)
+tokenizer = AutoTokenizer.from_pretrained(base_model_id, token=hf_token)
 if tokenizer.pad_token is None:
     tokenizer.pad_token = tokenizer.eos_token
 tokenizer.padding_side = "left"
 
 base_model = AutoModelForCausalLM.from_pretrained(
-    BASE_MODEL_ID,
+    base_model_id,
     quantization_config = bnb_config,
     device_map          = "auto",
-    token               = HF_TOKEN,
-    torch_dtype         = torch.bfloat16 if USE_BF16 else torch.float16,
+    token               = hf_token,
+    torch_dtype         = torch.bfloat16 if use_bf16 else torch.float16,
     trust_remote_code   = True,
 )
 
 model = PeftModel.from_pretrained(
     base_model,
-    SFT_MODEL_ID,
-    token        = HF_TOKEN,
+    sft_model_id,
+    token        = hf_token,
     is_trainable = True,
 )
 model = prepare_model_for_kbit_training(model)
@@ -109,8 +109,8 @@ def _make_messages(source_text: str) -> list:
             "content": [
                 {
                     "type"             : "text",
-                    "source_lang_code" : SOURCE_LANG_CODE,
-                    "target_lang_code" : TARGET_LANG_CODE,
+                    "source_lang_code" : source_lang_code,
+                    "target_lang_code" : target_lang_code,
                     "text"             : source_text,
                 }
             ],
@@ -127,7 +127,7 @@ def make_inference_prompt(source_text: str) -> str:
 # --- GRPO Dataset ------------------------------------------------------------
 
 raw = load_dataset("gplsi/amic_parallel")
-dataset_split = raw["train"].train_test_split(test_size=GRPO_VAL_SPLIT, seed=42)
+dataset_split = raw["train"].train_test_split(test_size=grpo_val_split, seed=42)
 train_raw = dataset_split["train"]
 val_raw = dataset_split["test"]
 
@@ -143,12 +143,12 @@ def preprocess(examples):
 grpo_dataset = (
     train_raw
     .shuffle(seed=42)
-    .select(range(min(N_TRAIN, len(train_raw))))
+    .select(range(min(n_train, len(train_raw))))
     .map(preprocess, batched=True, remove_columns=train_raw.column_names)
 )
 grpo_val_dataset = (
     val_raw
-    .select(range(min(GRPO_VAL_SAMPLES, len(val_raw))))
+    .select(range(min(grpo_val_samples, len(val_raw))))
     .map(preprocess, batched=True, remove_columns=val_raw.column_names)
 )
 
@@ -156,11 +156,11 @@ grpo_val_dataset = (
 # --- COMET ------------------------------------------------------------
 
 comet_model = None
-if LOCAL_RANK == 0:
+if local_rank == 0:
     _path       = download_model("Unbabel/wmt22-comet-da")
     comet_model = load_from_checkpoint(_path).to("cuda")
 
-if IS_DISTRIBUTED:
+if is_distributed:
     dist.barrier()
 
 
@@ -192,9 +192,9 @@ def copy_penalty(source: str, hypothesis: str) -> float:
     if src == hyp:
         return -1.0
     sim = sacrebleu.sentence_chrf(hyp, [src]).score / 100.0
-    THRESHOLD = 0.7
-    if sim > THRESHOLD:
-        return -(sim - THRESHOLD) / (1.0 - THRESHOLD)
+    threshold = 0.7
+    if sim > threshold:
+        return -(sim - threshold) / (1.0 - threshold)
     return 0.0
 
 
@@ -205,7 +205,7 @@ def _comet_batch(sources: List[str], hyps: List[str], refs: List[str]) -> List[f
     output = comet_model.predict(data, batch_size=8, gpus=0)
     scores = output.scores if hasattr(output, "scores") else output[0]
 
-    if IS_DISTRIBUTED:
+    if is_distributed:
         t = torch.tensor(scores, dtype=torch.float32, device="cuda")
         dist.broadcast(t, src=0)
         scores = t.cpu().tolist()
@@ -224,9 +224,9 @@ def composite_reward(
     for hyp, ref, src, c_s in zip(completions, reference, source_es, comet_scores):
         hyp = hyp.strip() if isinstance(hyp, str) else ""
         r = (
-            W_CHRF  * chrf_score(hyp, ref)
-          + W_COMET * c_s
-          + W_TTR   * ttr_score(hyp)
+            w_chrf  * chrf_score(hyp, ref)
+          + w_comet * c_s
+          + w_ttr   * ttr_score(hyp)
           + copy_penalty(src, hyp)
         )
         rewards.append(float(r))
@@ -271,7 +271,7 @@ class RewardEvalSaveCallback(TrainerCallback):
         completions, refs, sources = [], [], []
         self.model.eval()
         for sample in self.eval_dataset:
-            enc = self.tokenizer(sample["prompt"], return_tensors="pt").to(DEVICE)
+            enc = self.tokenizer(sample["prompt"], return_tensors="pt").to(device)
             with torch.no_grad():
                 out = self.model.generate(
                     **enc,
@@ -323,10 +323,10 @@ grpo_config = GRPOConfig(
     weight_decay                = 0.01,
     beta                        = 0.04,
     epsilon                     = 0.2,
-    bf16                        = USE_BF16,
-    fp16                        = not USE_BF16,
+    bf16                        = use_bf16,
+    fp16                        = not use_bf16,
     gradient_checkpointing      = True,
-    output_dir                  = OUTPUT_DIR,
+    output_dir                  = output_dir,
     logging_steps               = 10,
     save_steps                  = 10,
     report_to                   = "none",
@@ -345,8 +345,8 @@ trainer = GRPOTrainer(
             tokenizer=tokenizer,
             model=model,
             eval_dataset=grpo_val_dataset,
-            save_dir=BEST_MODEL_DIR,
-            every_n_steps=GRPO_VAL_EVERY_STEPS,
+            save_dir=best_model_dir,
+            every_n_steps=grpo_val_every_steps,
         ),
     ],
 )
@@ -361,12 +361,12 @@ print(f"Training complete. Final mean reward: {stats.metrics.get('train_reward',
 # --- Checkpoint summary ------------------------------------------------------------
 
 checkpoints = sorted([
-    d for d in os.listdir(OUTPUT_DIR)
+    d for d in os.listdir(output_dir)
     if d.startswith("checkpoint-")
 ], key=lambda x: int(x.split("-")[1]))
 
 for ckpt in checkpoints:
-    state_path = os.path.join(OUTPUT_DIR, ckpt, "trainer_state.json")
+    state_path = os.path.join(output_dir, ckpt, "trainer_state.json")
     if os.path.exists(state_path):
         with open(state_path) as f:
             state = json.load(f)
@@ -379,8 +379,8 @@ for ckpt in checkpoints:
 
 # -- Quick Evaluation ------------------------------------------------------------
 
-N_QUICK = 100
-test_ds = ld("gplsi/ES-VA_translation_test", split="test").select(range(N_QUICK))
+n_quick = 100
+test_ds = ld("gplsi/ES-VA_translation_test", split="test").select(range(n_quick))
 gold_es = [ex["es"] for ex in test_ds]
 gold_va = [ex["va"] for ex in test_ds]
 
@@ -390,7 +390,7 @@ hyps = []
 
 for src in gold_es:
     prompt = make_inference_prompt(src)
-    enc    = tokenizer(prompt, return_tensors="pt").to(DEVICE)
+    enc    = tokenizer(prompt, return_tensors="pt").to(device)
     with torch.no_grad():
         out = model.generate(**enc, max_new_tokens=128, do_sample=False,
                              pad_token_id=tokenizer.pad_token_id)
@@ -401,4 +401,4 @@ for src in gold_es:
 
 chrf = sacrebleu.corpus_chrf(hyps, [gold_va]).score
 bleu = sacrebleu.corpus_bleu(hyps, [gold_va]).score
-print(f"Quick eval ({N_QUICK} sents) — chrF: {chrf:.2f} | BLEU: {bleu:.2f}")
+print(f"Quick eval ({n_quick} sents) — chrF: {chrf:.2f} | BLEU: {bleu:.2f}")

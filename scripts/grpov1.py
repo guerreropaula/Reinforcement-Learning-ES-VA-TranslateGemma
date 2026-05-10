@@ -31,39 +31,39 @@ import transformers.models.gemma3.modeling_gemma3 as gemma3_module
 
 # ---- Config -----------------------------------------------------------
 
-HF_TOKEN       = ""
-BASE_MODEL_ID  = "google/translategemma-4b-it"
-SFT_MODEL_ID   = "guerreropaula/translategemma4b-sft-es-va"
-CLF_REPO_ID    = "guerreropaula/ht_mt_classifier_best"
-OUTPUT_ROOT     = "./outputs"
-GRPO_RUN_DIR    = os.path.join(OUTPUT_ROOT, "grpov1")
-GRPO_OUTPUT_DIR = os.path.join(GRPO_RUN_DIR, "checkpoints")
-GRPO_BEST_MODEL_DIR = os.path.join(GRPO_RUN_DIR, "best_model")
+hf_token = ""
+base_model_id = "google/translategemma-4b-it"
+sft_model_id = "guerreropaula/translategemma4b-sft-es-va"
+clf_repo_id = "guerreropaula/ht_mt_classifier_best"
+output_root = "./outputs"
+grpo_run_dir = os.path.join(output_root, "grpov1")
+grpo_output_dir = os.path.join(grpo_run_dir, "checkpoints")
+grpo_best_model_dir = os.path.join(grpo_run_dir, "best_model")
 
-SOURCE_LANG_CODE = "es"
-TARGET_LANG_CODE = "ca"
-SOURCE_COL       = "ES"
-TARGET_COL       = "VA"
+source_lang_code = "es"
+target_lang_code = "ca"
+source_col = "ES"
+target_col = "VA"
 
-DEVICE   = "cuda" if torch.cuda.is_available() else "cpu"
-USE_BF16 = torch.cuda.is_bf16_supported()
+device = "cuda" if torch.cuda.is_available() else "cpu"
+use_bf16 = torch.cuda.is_bf16_supported()
 
-HT_LABEL_IDX     = 1
-CLF_WARMUP_STEPS = 50
-CLF_WEIGHT_MAX   = 0.3
-TOTAL_STEPS      = 100
-GRPO_TRAIN_SAMPLES = 5_000
-GRPO_VAL_SPLIT     = 0.02
-GRPO_VAL_SAMPLES   = 200
-GRPO_VAL_EVERY_STEPS = 20
+ht_label_idx = 1
+clf_warmup_steps = 50
+clf_weight_max = 0.3
+total_steps = 100
+grpo_train_samples = 5_000
+grpo_val_split = 0.02
+grpo_val_samples = 200
+grpo_val_every_steps = 20
 
 _reward_step_counter = {"step": 0}
 
-if HF_TOKEN:
-    login(token=HF_TOKEN)
+if hf_token:
+    login(token=hf_token)
 
-os.makedirs(GRPO_OUTPUT_DIR, exist_ok=True)
-os.makedirs(GRPO_BEST_MODEL_DIR, exist_ok=True)
+os.makedirs(grpo_output_dir, exist_ok=True)
+os.makedirs(grpo_best_model_dir, exist_ok=True)
 
 
 
@@ -82,25 +82,25 @@ bnb_config = BitsAndBytesConfig(
     load_in_4bit              = True,
     bnb_4bit_use_double_quant = True,
     bnb_4bit_quant_type       = "nf4",
-    bnb_4bit_compute_dtype    = torch.bfloat16 if USE_BF16 else torch.float16,
+    bnb_4bit_compute_dtype    = torch.bfloat16 if use_bf16 else torch.float16,
 )
 
-tokenizer = AutoTokenizer.from_pretrained(SFT_MODEL_ID, token=HF_TOKEN)
+tokenizer = AutoTokenizer.from_pretrained(sft_model_id, token=hf_token)
 if tokenizer.pad_token is None:
     tokenizer.pad_token = tokenizer.eos_token
 tokenizer.padding_side = "right"
 
 base_model = AutoModelForCausalLM.from_pretrained(
-    BASE_MODEL_ID,
+    base_model_id,
     quantization_config = bnb_config,
     device_map          = "auto",
-    token               = HF_TOKEN,
-    torch_dtype         = torch.bfloat16 if USE_BF16 else torch.float16,
+    token               = hf_token,
+    torch_dtype         = torch.bfloat16 if use_bf16 else torch.float16,
     trust_remote_code   = True,
 )
 base_model = prepare_model_for_kbit_training(base_model)
 
-model = PeftModel.from_pretrained(base_model, SFT_MODEL_ID, is_trainable=True, token=HF_TOKEN)
+model = PeftModel.from_pretrained(base_model, sft_model_id, is_trainable=True, token=hf_token)
 model.print_trainable_parameters()
 
 
@@ -114,8 +114,8 @@ def _make_messages(source_text: str) -> list:
             "content": [
                 {
                     "type"             : "text",
-                    "source_lang_code" : SOURCE_LANG_CODE,
-                    "target_lang_code" : TARGET_LANG_CODE,
+                    "source_lang_code" : source_lang_code,
+                    "target_lang_code" : target_lang_code,
                     "text"             : source_text,
                 }
             ],
@@ -132,25 +132,25 @@ def make_inference_prompt(source_text: str) -> str:
 # --- GRPO Dataset ------------------------------------------------------------
 
 raw_dataset = load_dataset("gplsi/amic_parallel")
-dataset_split = raw_dataset["train"].train_test_split(test_size=GRPO_VAL_SPLIT, seed=42)
+dataset_split = raw_dataset["train"].train_test_split(test_size=grpo_val_split, seed=42)
 train_raw = dataset_split["train"]
 val_raw = dataset_split["test"]
 
 
 def make_grpo_example(examples):
     return {
-        "prompt"   : [make_inference_prompt(src) for src in examples[SOURCE_COL]],
-        "reference": list(examples[TARGET_COL]),
+        "prompt"   : [make_inference_prompt(src) for src in examples[source_col]],
+        "reference": list(examples[target_col]),
     }
 
 
-grpo_raw     = train_raw.shuffle(seed=123).select(range(min(GRPO_TRAIN_SAMPLES, len(train_raw))))
+grpo_raw     = train_raw.shuffle(seed=123).select(range(min(grpo_train_samples, len(train_raw))))
 grpo_dataset = grpo_raw.map(
     make_grpo_example,
     batched        = True,
     remove_columns = grpo_raw.column_names,
 )
-grpo_val_raw = val_raw.select(range(min(GRPO_VAL_SAMPLES, len(val_raw))))
+grpo_val_raw = val_raw.select(range(min(grpo_val_samples, len(val_raw))))
 grpo_val_dataset = grpo_val_raw.map(
     make_grpo_example,
     batched=True,
@@ -160,17 +160,17 @@ grpo_val_dataset = grpo_val_raw.map(
 
 # --- Reward Functions ----------------------------------------------------------------
 
-_clf_tok   = AutoTokenizer.from_pretrained(CLF_REPO_ID)
-_clf_model = AutoModelForSequenceClassification.from_pretrained(CLF_REPO_ID)
-_clf_model.eval().to(DEVICE)
-print(f"Classifier : {CLF_REPO_ID}")
+_clf_tok   = AutoTokenizer.from_pretrained(clf_repo_id)
+_clf_model = AutoModelForSequenceClassification.from_pretrained(clf_repo_id)
+_clf_model.eval().to(device)
+print(f"Classifier : {clf_repo_id}")
 print(f"Labels     : {_clf_model.config.id2label}")
 
 
 def _clf_alpha() -> float:
     step = _reward_step_counter["step"]
-    progress = min(1.0, step / max(1, CLF_WARMUP_STEPS))
-    return CLF_WEIGHT_MAX * progress
+    progress = min(1.0, step / max(1, clf_warmup_steps))
+    return clf_weight_max * progress
 
 
 @torch.no_grad()
@@ -180,9 +180,9 @@ def translationese_reward(texts: List[str], batch_size: int = 16) -> List[float]
         batch = texts[i : i + batch_size]
         enc   = _clf_tok(
             batch, return_tensors="pt", padding=True, truncation=True, max_length=256
-        ).to(DEVICE)
+        ).to(device)
         probs = F.softmax(_clf_model(**enc).logits, dim=-1)
-        rewards.extend(probs[:, HT_LABEL_IDX].cpu().tolist())
+        rewards.extend(probs[:, ht_label_idx].cpu().tolist())
     return rewards
 
 
@@ -228,17 +228,17 @@ def _patched_mask_fn(config, input_embeds, attention_mask, cache_position,
 
 gemma3_module.create_causal_mask_mapping = _patched_mask_fn
 
-_ModelClass = type(model)
-if not getattr(_ModelClass, "_forward_patched", False):
-    _ModelClass._true_original_forward = _ModelClass.forward
+_model_class = type(model)
+if not getattr(_model_class, "_forward_patched", False):
+    _model_class._true_original_forward = _model_class.forward
 
     def _patched_forward(self, *args, **kwargs):
         if kwargs.get("token_type_ids") is None and "input_ids" in kwargs:
             kwargs["token_type_ids"] = torch.zeros_like(kwargs["input_ids"])
-        return _ModelClass._true_original_forward(self, *args, **kwargs)
+        return _model_class._true_original_forward(self, *args, **kwargs)
 
-    _ModelClass.forward = _patched_forward
-    _ModelClass._forward_patched = True
+    _model_class.forward = _patched_forward
+    _model_class._forward_patched = True
 
 
 
@@ -344,7 +344,7 @@ class RewardEvalSaveCallback(TrainerCallback):
         for hyp, ref in zip(hyps, refs):
             chrf_reward = 0.0 if not hyp.strip() or not ref.strip() else sacrebleu.sentence_chrf(hyp, [ref]).score / 100.0
             ht_reward = translationese_reward([hyp])[0] if hyp.strip() else 0.0
-            reward_values.append((1.0 - CLF_WEIGHT_MAX) * chrf_reward + CLF_WEIGHT_MAX * ht_reward)
+            reward_values.append((1.0 - clf_weight_max) * chrf_reward + clf_weight_max * ht_reward)
         mean_reward = sum(reward_values) / len(reward_values) if reward_values else 0.0
         self.model.train()
         return mean_reward
@@ -376,7 +376,7 @@ grpo_config = GRPOConfig(
     per_device_train_batch_size = 1,
     gradient_accumulation_steps = 8,
     learning_rate               = 5e-6,
-    max_steps                   = TOTAL_STEPS,
+    max_steps                   = total_steps,
     warmup_steps                = 20,
     optim                       = "paged_adamw_8bit",
     weight_decay                = 0.01,
@@ -386,13 +386,13 @@ grpo_config = GRPOConfig(
     num_generations             = 2,
     max_completion_length       = 100,
     temperature                 = 0.9,
-    output_dir                  = GRPO_OUTPUT_DIR,
+    output_dir                  = grpo_output_dir,
     logging_steps               = 1,
     save_steps                  = 20,
     seed                        = 3407,
     report_to                   = "none",
-    fp16                        = not USE_BF16,
-    bf16                        = USE_BF16,
+    fp16                        = not use_bf16,
+    bf16                        = use_bf16,
 )
 
 grpo_trainer = GRPOTrainer(
@@ -411,8 +411,8 @@ grpo_trainer.add_callback(
         tokenizer=tokenizer,
         model=model,
         eval_dataset=grpo_val_dataset,
-        save_dir=GRPO_BEST_MODEL_DIR,
-        every_n_steps=GRPO_VAL_EVERY_STEPS,
+        save_dir=grpo_best_model_dir,
+        every_n_steps=grpo_val_every_steps,
     )
 )
 

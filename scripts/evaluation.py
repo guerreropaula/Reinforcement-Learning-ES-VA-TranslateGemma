@@ -24,32 +24,32 @@ from transformers import AutoTokenizer, AutoModelForCausalLM, BitsAndBytesConfig
 
 # --- Config -------------------------------------------------------------
 
-HF_TOKEN        = ""
-BASE_MODEL_ID   = "google/translategemma-4b-it"
-SFT_MODEL_ID    = "guerreropaula/translategemma4b-sft-es-va"
-GRPOV1_MODEL_ID = "guerreropaula/translategemma4b-grpov1-es-va"
-GRPOV2_MODEL_ID = "guerreropaula/translategemma4b-grpov2-es-va"
+hf_token        = ""
+base_model_id   = "google/translategemma-4b-it"
+sft_model_id    = "guerreropaula/translategemma4b-sft-es-va"
+grpov1_model_id = "guerreropaula/translategemma4b-grpov1-es-va"
+grpov2_model_id = "guerreropaula/translategemma4b-grpov2-es-va"
 
-SOURCE_LANG_CODE = "es"
-TARGET_LANG_CODE = "ca"
-EVAL_N           = 1000
-EVAL_SRC         = "es"
-EVAL_TGT         = "va"
-MAX_SEQ_EVAL     = 512
+source_lang_code = "es"
+target_lang_code = "ca"
+eval_n           = 1000
+eval_src         = "es"
+eval_tgt         = "va"
+max_seq_eval     = 512
 
-DEVICE   = "cuda" if torch.cuda.is_available() else "cpu"
-USE_BF16 = torch.cuda.is_bf16_supported()
+device   = "cuda" if torch.cuda.is_available() else "cpu"
+use_bf16 = torch.cuda.is_bf16_supported()
 
-MODELS = ["baseline", "sft", "grpov1", "grpov2"]
-LABELS = {"baseline": "BASE", "sft": "SFT", "grpov1": "GRPOv1", "grpov2": "GRPOv2"}
-COLORS = {
+models = ["baseline", "sft", "grpov1", "grpov2"]
+labels = {"baseline": "BASE", "sft": "SFT", "grpov1": "GRPOv1", "grpov2": "GRPOv2"}
+colors = {
     "baseline": "#6c757d",
     "sft":      "#1f77b4",
     "grpov1":   "#ff7f0e",
     "grpov2":   "#2ca02c",
 }
 
-CA_VA_FEATURES = {
+ca_va_features = {
     "aquesta": "esta", "quest": "este", "aquestes": "estes", "aquests": "estos",
     "seva": "seua", "seves": "seues", "darrer": "últim", "darrers": "últims",
     "darrera": "última", "tenir": "tindre", "obtenir": "obtindre",
@@ -62,8 +62,8 @@ CA_VA_FEATURES = {
     "mirall": "espill", "tomàquet": "tomaca", "tomàquets": "tomaques",
 }
 
-if HF_TOKEN:
-    login(token=HF_TOKEN)
+if hf_token:
+    login(token=hf_token)
 
 
 # --- Setup -------------------------------------------------------------
@@ -71,7 +71,7 @@ if HF_TOKEN:
 bnb_config = BitsAndBytesConfig(
     load_in_4bit              = True,
     bnb_4bit_quant_type       = "nf4",
-    bnb_4bit_compute_dtype    = torch.bfloat16 if USE_BF16 else torch.float16,
+    bnb_4bit_compute_dtype    = torch.bfloat16 if use_bf16 else torch.float16,
     bnb_4bit_use_double_quant = True,
 )
 
@@ -90,8 +90,8 @@ def make_eval_prompt(tok, source_text: str) -> str:
             "content": [
                 {
                     "type"             : "text",
-                    "source_lang_code" : SOURCE_LANG_CODE,
-                    "target_lang_code" : TARGET_LANG_CODE,
+                    "source_lang_code" : source_lang_code,
+                    "target_lang_code" : target_lang_code,
                     "text"             : source_text,
                 }
             ],
@@ -110,14 +110,14 @@ def translate_all(model, tok, sources, refs, label):
         prompt = make_eval_prompt(tok, src)
         n_tok  = len(tok(prompt).input_ids)
 
-        if n_tok > MAX_SEQ_EVAL:
+        if n_tok > max_seq_eval:
             hyps.append("[SKIPPED]")
             skipped_idx.append(i)
             print(f"[{label}] [{i+1:3d}/{len(sources)}] SKIPPED (prompt too long)")
             continue
 
         inputs  = tok(prompt, return_tensors="pt",
-                      truncation=True, max_length=MAX_SEQ_EVAL).to(model.device)
+                      truncation=True, max_length=max_seq_eval).to(model.device)
         src_len = len(tok(src).input_ids)
         max_new = min(512, max(80, int(src_len * 1.2)))
 
@@ -141,7 +141,7 @@ def translate_all(model, tok, sources, refs, label):
 
 def comet_scores(sources, hyps, refs):
     data = [{"src": src, "mt": hyp, "ref": ref} for src, hyp, ref in zip(sources, hyps, refs)]
-    output = comet_model.predict(data, batch_size=8, gpus=1 if DEVICE == "cuda" else 0)
+    output = comet_model.predict(data, batch_size=8, gpus=1 if device == "cuda" else 0)
     return output.scores if hasattr(output, "scores") else output[0]
 
 
@@ -192,12 +192,12 @@ def evaluate_only(model, tokenizer, label="EVAL", n_samples=1000):
 
 eval_dataset = load_dataset("gplsi/ES-VA_translation_test", split="test")
 
-eval_sorted = eval_dataset.map(lambda x: {"len": len(x[EVAL_SRC])})
+eval_sorted = eval_dataset.map(lambda x: {"len": len(x[eval_src])})
 eval_sorted = eval_sorted.sort("len", reverse=True)
-eval_raw    = eval_sorted.select(range(EVAL_N))
+eval_raw    = eval_sorted.select(range(eval_n))
 
-gold_es = [ex[EVAL_SRC] for ex in eval_raw]
-gold_va = [ex[EVAL_TGT] for ex in eval_raw]
+gold_es = [ex[eval_src] for ex in eval_raw]
+gold_va = [ex[eval_tgt] for ex in eval_raw]
 
 print(f"Selected  : {len(gold_es)} sentences")
 print(f"Avg length: {sum(len(s) for s in gold_es) / len(gold_es):.1f} chars")
@@ -205,20 +205,20 @@ print(f"Avg length: {sum(len(s) for s in gold_es) / len(gold_es):.1f} chars")
 
 # --- 1.Baseline -------------------------------------------------------------
 
-tok_base   = AutoTokenizer.from_pretrained(BASE_MODEL_ID)
+tok_base   = AutoTokenizer.from_pretrained(base_model_id)
 model_base = AutoModelForCausalLM.from_pretrained(
-    BASE_MODEL_ID, quantization_config=bnb_config, device_map="auto"
+    base_model_id, quantization_config=bnb_config, device_map="auto"
 )
 
-m_base, hyps_base, skip_base = evaluate_only(model_base, tok_base, "BASE", EVAL_N)
+m_base, hyps_base, skip_base = evaluate_only(model_base, tok_base, "BASE", eval_n)
 
 with open("baselinetranslategemma_results.json", "w", encoding="utf-8") as f:
     json.dump({
         "dataset": "gplsi/ES-VA_translation_test",
-        "n_total": EVAL_N,
+        "n_total": eval_n,
         "results": [m_base],
         "samples": [{"id": i, "source_es": gold_es[i], "reference_va": gold_va[i],
-                     "baseline": hyps_base[i]} for i in range(EVAL_N)]
+                     "baseline": hyps_base[i]} for i in range(eval_n)]
     }, f, ensure_ascii=False, indent=2)
 
 del model_base
@@ -229,21 +229,21 @@ gc.collect()
 # --- 2.SFT -------------------------------------------------------------
 
 base_sft  = AutoModelForCausalLM.from_pretrained(
-    BASE_MODEL_ID, quantization_config=bnb_config, device_map="auto"
+    base_model_id, quantization_config=bnb_config, device_map="auto"
 )
-tok_sft   = AutoTokenizer.from_pretrained(BASE_MODEL_ID)
-model_sft = PeftModel.from_pretrained(base_sft, SFT_MODEL_ID)
+tok_sft   = AutoTokenizer.from_pretrained(base_model_id)
+model_sft = PeftModel.from_pretrained(base_sft, sft_model_id)
 model_sft.eval()
 
-m_sft, hyps_sft, skip_sft = evaluate_only(model_sft, tok_sft, "SFT", EVAL_N)
+m_sft, hyps_sft, skip_sft = evaluate_only(model_sft, tok_sft, "SFT", eval_n)
 
 with open("sft_results.json", "w", encoding="utf-8") as f:
     json.dump({
         "dataset": "gplsi/ES-VA_translation_test",
-        "n_total": EVAL_N,
+        "n_total": eval_n,
         "results": [m_sft],
         "samples": [{"id": i, "source_es": gold_es[i], "reference_va": gold_va[i],
-                     "sft": hyps_sft[i]} for i in range(EVAL_N)]
+                     "sft": hyps_sft[i]} for i in range(eval_n)]
     }, f, ensure_ascii=False, indent=2)
 
 del model_sft, base_sft
@@ -254,21 +254,21 @@ gc.collect()
 
 # --- 3. GRPOv1 -------------------------------------------------------------
 
-tok_grpov1   = AutoTokenizer.from_pretrained(GRPOV1_MODEL_ID)
+tok_grpov1   = AutoTokenizer.from_pretrained(grpov1_model_id)
 model_grpov1 = AutoModelForCausalLM.from_pretrained(
-    GRPOV1_MODEL_ID, quantization_config=bnb_config, device_map="auto"
+    grpov1_model_id, quantization_config=bnb_config, device_map="auto"
 )
 model_grpov1.eval()
 
-m_grpov1, hyps_grpov1, skip_grpov1 = evaluate_only(model_grpov1, tok_grpov1, "GRPOv1", EVAL_N)
+m_grpov1, hyps_grpov1, skip_grpov1 = evaluate_only(model_grpov1, tok_grpov1, "GRPOv1", eval_n)
 
 with open("grpov1_results.json", "w", encoding="utf-8") as f:
     json.dump({
         "dataset": "gplsi/ES-VA_translation_test",
-        "n_total": EVAL_N,
+        "n_total": eval_n,
         "results": [m_grpov1],
         "samples": [{"id": i, "source_es": gold_es[i], "reference_va": gold_va[i],
-                     "grpov1": hyps_grpov1[i]} for i in range(EVAL_N)]
+                     "grpov1": hyps_grpov1[i]} for i in range(eval_n)]
     }, f, ensure_ascii=False, indent=2)
 
 del model_grpov1
@@ -280,20 +280,20 @@ gc.collect()
 # --- 4.GRPOv2 -------------------------------------------------------------
 
 base_model = AutoModelForCausalLM.from_pretrained(
-    BASE_MODEL_ID, quantization_config=bnb_config, device_map="auto"
+    base_model_id, quantization_config=bnb_config, device_map="auto"
 )
-model_grpov2 = PeftModel.from_pretrained(base_model, GRPOV2_MODEL_ID)
-tok_grpov2   = AutoTokenizer.from_pretrained(BASE_MODEL_ID)
+model_grpov2 = PeftModel.from_pretrained(base_model, grpov2_model_id)
+tok_grpov2   = AutoTokenizer.from_pretrained(base_model_id)
 
-m_grpov2, hyps_grpov2, skip_grpov2 = evaluate_only(model_grpov2, tok_grpov2, "GRPOv2", EVAL_N)
+m_grpov2, hyps_grpov2, skip_grpov2 = evaluate_only(model_grpov2, tok_grpov2, "GRPOv2", eval_n)
 
 with open("grpov2_results.json", "w", encoding="utf-8") as f:
     json.dump({
         "dataset": "gplsi/ES-VA_translation_test",
-        "n_total": EVAL_N,
+        "n_total": eval_n,
         "results": [m_grpov2],
         "samples": [{"id": i, "source_es": gold_es[i], "reference_va": gold_va[i],
-                     "grpov2": hyps_grpov2[i]} for i in range(EVAL_N)]
+                     "grpov2": hyps_grpov2[i]} for i in range(eval_n)]
     }, f, ensure_ascii=False, indent=2)
 
 del model_grpov2
@@ -327,7 +327,7 @@ print("  TER: lower is better  |  chrF / BLEU / BLEURT / COMET: higher is better
 with open("eval_results_combined.json", "w", encoding="utf-8") as f:
     json.dump({
         "dataset": "gplsi/ES-VA_translation_test",
-        "n_total": EVAL_N,
+        "n_total": eval_n,
         "results": all_metrics,
         "samples": [
             {
@@ -339,7 +339,7 @@ with open("eval_results_combined.json", "w", encoding="utf-8") as f:
                 "grpov1"      : hyps_grpov1[i],
                 "grpov2"      : hyps_grpov2[i],
             }
-            for i in range(EVAL_N)
+            for i in range(eval_n)
         ]
     }, f, ensure_ascii=False, indent=2)
 
@@ -353,7 +353,7 @@ def dialectal_score(hypotheses, label):
     per_feature = {}
     total_va, total_ca = 0, 0
 
-    for ca_form, va_form in CA_VA_FEATURES.items():
+    for ca_form, va_form in ca_va_features.items():
         va_hits = len(re.findall(r'\b' + re.escape(va_form) + r'\b', corpus))
         ca_hits = len(re.findall(r'\b' + re.escape(ca_form) + r'\b', corpus))
         total   = va_hits + ca_hits
@@ -375,23 +375,23 @@ def dialectal_score(hypotheses, label):
 
 scores = {}
 feats  = {}
-for model_key in MODELS:
+for model_key in models:
     scores[model_key], feats[model_key] = dialectal_score(hyps_all[model_key], model_key.upper())
 
 
 
 fig, ax = plt.subplots(figsize=(7, 4.5))
-vals     = [scores[m]*100 for m in MODELS]
+vals     = [scores[m]*100 for m in models]
 best_val = max(vals)
-bars     = ax.bar(range(len(MODELS)), vals, color=[COLORS[m] for m in MODELS],
+bars     = ax.bar(range(len(models)), vals, color=[colors[m] for m in models],
                   width=0.55, zorder=3, edgecolor="white")
-for bar, m, v in zip(bars, MODELS, vals):
+for bar, m, v in zip(bars, models, vals):
     bar.set_alpha(1.0 if v == best_val else 0.72)
     ax.text(bar.get_x()+bar.get_width()/2, v+0.8, f"{v:.1f}%",
             ha="center", va="bottom", fontsize=10,
             fontweight="bold" if v == best_val else "normal")
-ax.set_xticks(range(len(MODELS)))
-ax.set_xticklabels([LABELS[m] for m in MODELS], fontsize=10)
+ax.set_xticks(range(len(models)))
+ax.set_xticklabels([labels[m] for m in models], fontsize=10)
 ax.set_ylabel("Valencian Form Usage Rate (%)", fontsize=10)
 ax.set_title("Dialectal Valencian Score", fontsize=12, fontweight="bold")
 ax.set_ylim(0, max(vals)*1.2)
@@ -403,12 +403,12 @@ print("Saved: fig_dialectal_score.png")
 
 
 rows = []
-for ca, va in CA_VA_FEATURES.items():
+for ca, va in ca_va_features.items():
     row = {"CA form": ca, "VA form": va}
-    for m in MODELS:
+    for m in models:
         r = feats[m][ca]["va_rate"]
-        row[f"{LABELS[m]} VA%"]   = f"{r:.0%}" if r is not None else "-"
-        row[f"{LABELS[m]} va/ca"] = f"{feats[m][ca]['va_hits']}/{feats[m][ca]['ca_hits']}"
+        row[f"{labels[m]} VA%"]   = f"{r:.0%}" if r is not None else "-"
+        row[f"{labels[m]} va/ca"] = f"{feats[m][ca]['va_hits']}/{feats[m][ca]['ca_hits']}"
     rows.append(row)
 
 df_feat = pd.DataFrame(rows).sort_values("CA form")
@@ -419,17 +419,17 @@ print(df_feat.to_string(index=False))
 dialect_summary = {
     "dataset": "gplsi/ES-VA_translation_test",
     "n_total": len(gold_va),
-    "dialectal_scores": {LABELS[m]: round(scores[m], 4) for m in MODELS},
+    "dialectal_scores": {labels[m]: round(scores[m], 4) for m in models},
     "per_feature": {
         ca: {
             "va_form": va,
-            **{LABELS[m]: {
+            **{labels[m]: {
                 "va_hits": feats[m][ca]["va_hits"],
                 "ca_hits": feats[m][ca]["ca_hits"],
                 "va_rate": round(feats[m][ca]["va_rate"], 4) if feats[m][ca]["va_rate"] is not None else None,
-            } for m in MODELS}
+            } for m in models}
         }
-        for ca, va in CA_VA_FEATURES.items()
+        for ca, va in ca_va_features.items()
     }
 }
 
@@ -438,5 +438,5 @@ with open("eval_dialect_summary.json", "w", encoding="utf-8") as f:
 
 print("\nDialectal VA Score Summary:")
 print("-"*40)
-for m in MODELS:
-    print(f"  {LABELS[m]:<12}: {scores[m]:.1%}")
+for m in models:
+    print(f"  {labels[m]:<12}: {scores[m]:.1%}")
