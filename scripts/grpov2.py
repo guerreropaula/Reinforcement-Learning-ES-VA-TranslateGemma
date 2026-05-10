@@ -15,9 +15,9 @@ import peft
 import trl
 
 from typing import List
-from transformers import AutoTokenizer, AutoModelForCausalLM, BitsAndBytesConfig
+from transformers import AutoTokenizer, AutoModelForCausalLM, BitsAndBytesConfig, TrainerCallback
 from peft import PeftModel, prepare_model_for_kbit_training
-from trl import GRPOConfig, GRPOTrainer, TrainerCallback
+from trl import GRPOConfig, GRPOTrainer
 from datasets import load_dataset as ld, load_dataset
 from comet import download_model, load_from_checkpoint
 from huggingface_hub import login

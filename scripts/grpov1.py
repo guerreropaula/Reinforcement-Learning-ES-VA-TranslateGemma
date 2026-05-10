@@ -208,39 +208,6 @@ def composite_reward(hypotheses: List[str], references: List[str]) -> List[float
     ]
 
 
-importlib.reload(gemma3_module)
-gemma3_module._true_original_mask_fn = gemma3_module.create_causal_mask_mapping
-
-def _patched_mask_fn(config, input_embeds, attention_mask, cache_position,
-                     past_key_values, position_ids, token_type_ids=None,
-                     pixel_values=None, is_training=False,
-                     is_first_iteration=None, **kwargs):
-    if is_training and token_type_ids is None:
-        token_type_ids = torch.zeros(
-            input_embeds.shape[:2], dtype=torch.long, device=input_embeds.device
-        )
-    return gemma3_module._true_original_mask_fn(
-        config, input_embeds, attention_mask, cache_position,
-        past_key_values, position_ids, token_type_ids,
-        pixel_values, is_training, is_first_iteration, **kwargs
-    )
-
-
-gemma3_module.create_causal_mask_mapping = _patched_mask_fn
-
-_model_class = type(model)
-if not getattr(_model_class, "_forward_patched", False):
-    _model_class._true_original_forward = _model_class.forward
-
-    def _patched_forward(self, *args, **kwargs):
-        if kwargs.get("token_type_ids") is None and "input_ids" in kwargs:
-            kwargs["token_type_ids"] = torch.zeros_like(kwargs["input_ids"])
-        return _model_class._true_original_forward(self, *args, **kwargs)
-
-    _model_class.forward = _patched_forward
-    _model_class._forward_patched = True
-
-
 
 # --- Reward wrapper ------------------------------------------------------- 
 

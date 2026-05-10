@@ -16,6 +16,6 @@ This directory contains all scripts required to reproduce the experiments report
 4. `grpov2.py`
    Continues training from the SFT model with a composite reward based on `chrF`, `COMET`, `TTR`, and copy penalty.
 
-5. `evaluation.py`
+5. `evaluate.py`
    Runs full evaluation on the test set and produces aggregate metrics plus dialectal analysis.
 
