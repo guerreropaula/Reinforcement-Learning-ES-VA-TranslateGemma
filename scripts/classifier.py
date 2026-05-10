@@ -45,8 +45,11 @@ MODEL_NAME   = "PlanTL-GOB-ES/roberta-base-ca"
 HELSINKI_MODEL = "Helsinki-NLP/opus-mt-es-ca"
 NLLB_MODEL     = "facebook/nllb-200-distilled-600M"
 CLF_REPO_ID    = "guerreropaula/ht_mt_classifier_best"
-CLF_OUTPUT_DIR = "./ht_mt_classifier_best"
+OUTPUT_ROOT    = "./outputs"
+CLASSIFIER_RUN_DIR = os.path.join(OUTPUT_ROOT, "classifier")
+CLF_OUTPUT_DIR = os.path.join(CLASSIFIER_RUN_DIR, "best_model")
 HT_LABEL_IDX   = 1
+TRAINING_OUTPUT_DIR = os.path.join(CLASSIFIER_RUN_DIR, "checkpoints")
 
 MAX_PER_CORPUS = 20_000
 DEVICE = 0 if torch.cuda.is_available() else -1
@@ -59,7 +62,11 @@ CORPORA = [
 
 BASE_URL = "https://github.com/Softcatala/parallel-catalan-corpus/raw/master/spa-cat/"
 
-login(token=HF_TOKEN)
+if HF_TOKEN:
+    login(token=HF_TOKEN)
+
+os.makedirs(TRAINING_OUTPUT_DIR, exist_ok=True)
+os.makedirs(CLF_OUTPUT_DIR, exist_ok=True)
 
 
 # --- Softcatalà corpus ------------------------------------------------------
@@ -368,11 +375,11 @@ class LossPlotCallback(TrainerCallback):
 
 # --- Training -----------------------------------------------------------
 
-os.makedirs("./ht_mt_classifier", exist_ok=True)
+os.makedirs(TRAINING_OUTPUT_DIR, exist_ok=True)
 data_collator = DataCollatorWithPadding(tokenizer=tokenizer)
 
 training_args = TrainingArguments(
-    output_dir                  = "./ht_mt_classifier",
+    output_dir                  = TRAINING_OUTPUT_DIR,
     num_train_epochs            = 5,
     per_device_train_batch_size = 32,
     per_device_eval_batch_size  = 32,
@@ -406,6 +413,8 @@ trainer = Trainer(
 
 print("Starting training...")
 trainer.train()
+trainer.save_model(CLF_OUTPUT_DIR)
+tokenizer.save_pretrained(CLF_OUTPUT_DIR)
 
 results = trainer.evaluate()
 print("\nValidation results:")

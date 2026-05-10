@@ -30,8 +30,10 @@ HF_TOKEN      = ""
 BASE_MODEL_ID = "google/translategemma-4b-it"
 SFT_MODEL_ID  = "guerreropaula/translategemma4b-sft-es-va"
 GRPO_HUB_ID   = "guerreropaula/translategemma4b-grpov2-es-va"
-OUTPUT_DIR    = "./translategemma4b_grpo_v2"
-BEST_CKPT     = "./translategemma4b_grpo/checkpoint-100"
+OUTPUT_ROOT   = "./outputs"
+GRPO_RUN_DIR  = os.path.join(OUTPUT_ROOT, "grpov2")
+OUTPUT_DIR    = os.path.join(GRPO_RUN_DIR, "checkpoints")
+BEST_MODEL_DIR = os.path.join(GRPO_RUN_DIR, "best_model")
 
 SOURCE_LANG_CODE = "es"
 TARGET_LANG_CODE = "ca"
@@ -45,11 +47,17 @@ N_TRAIN  = 10_000
 W_CHRF   = 0.5
 W_COMET  = 0.3
 W_TTR    = 0.2
+GRPO_VAL_SPLIT = 0.02
+GRPO_VAL_SAMPLES = 200
+GRPO_VAL_EVERY_STEPS = 20
 
 LOCAL_RANK     = int(os.environ.get("LOCAL_RANK", 0))
 IS_DISTRIBUTED = dist.is_initialized()
 
-login(token=HF_TOKEN)
+if HF_TOKEN:
+    login(token=HF_TOKEN)
+os.makedirs(OUTPUT_DIR, exist_ok=True)
+os.makedirs(BEST_MODEL_DIR, exist_ok=True)
 print(f"device: {DEVICE} | bf16: {USE_BF16}")
 
 
@@ -119,6 +127,9 @@ def make_inference_prompt(source_text: str) -> str:
 # --- GRPO Dataset ------------------------------------------------------------
 
 raw = load_dataset("gplsi/amic_parallel")
+dataset_split = raw["train"].train_test_split(test_size=GRPO_VAL_SPLIT, seed=42)
+train_raw = dataset_split["train"]
+val_raw = dataset_split["test"]
 
 
 def preprocess(examples):
@@ -130,10 +141,15 @@ def preprocess(examples):
 
 
 grpo_dataset = (
-    raw["train"]
+    train_raw
     .shuffle(seed=42)
-    .select(range(N_TRAIN))
-    .map(preprocess, batched=True, remove_columns=raw["train"].column_names)
+    .select(range(min(N_TRAIN, len(train_raw))))
+    .map(preprocess, batched=True, remove_columns=train_raw.column_names)
+)
+grpo_val_dataset = (
+    val_raw
+    .select(range(min(GRPO_VAL_SAMPLES, len(val_raw))))
+    .map(preprocess, batched=True, remove_columns=val_raw.column_names)
 )
 
 
@@ -242,6 +258,53 @@ class RewardPlotCallback(TrainerCallback):
             plt.close()
 
 
+class BleuEvalSaveCallback(TrainerCallback):
+    def __init__(self, tokenizer, model, eval_dataset, save_dir, every_n_steps=20):
+        self.tokenizer = tokenizer
+        self.model = model
+        self.eval_dataset = eval_dataset
+        self.save_dir = save_dir
+        self.every_n_steps = every_n_steps
+        self.best_bleu = float("-inf")
+
+    def _run_bleu_eval(self):
+        hyps, refs = [], []
+        self.model.eval()
+        for sample in self.eval_dataset:
+            enc = self.tokenizer(sample["prompt"], return_tensors="pt").to(DEVICE)
+            with torch.no_grad():
+                out = self.model.generate(
+                    **enc,
+                    max_new_tokens=128,
+                    do_sample=False,
+                    pad_token_id=self.tokenizer.pad_token_id,
+                )
+            text = self.tokenizer.decode(out[0][enc["input_ids"].shape[1]:], skip_special_tokens=True).strip()
+            hyps.append(text)
+            refs.append(sample["reference"])
+        bleu = sacrebleu.corpus_bleu(hyps, [refs]).score
+        self.model.train()
+        return bleu
+
+    def _maybe_save_best(self, step):
+        bleu = self._run_bleu_eval()
+        print(f"[val] step={step:4d} | BLEU={bleu:.4f} | best={self.best_bleu:.4f}")
+        if bleu > self.best_bleu:
+            self.best_bleu = bleu
+            self.model.save_pretrained(self.save_dir)
+            self.tokenizer.save_pretrained(self.save_dir)
+            print(f"[val] New best model saved to {self.save_dir}")
+
+    def on_step_end(self, args, state, control, **kwargs):
+        if state.global_step == 0 or state.global_step % self.every_n_steps != 0:
+            return
+        self._maybe_save_best(state.global_step)
+
+    def on_train_end(self, args, state, control, **kwargs):
+        if self.best_bleu == float("-inf"):
+            self._maybe_save_best(state.global_step)
+
+
 
 # --- GRPO Training ------------------------------------------------------------
 
@@ -274,7 +337,16 @@ trainer = GRPOTrainer(
     reward_funcs     = composite_reward,
     args             = grpo_config,
     train_dataset    = grpo_dataset,
-    callbacks        = [RewardPlotCallback("grpo_reward_curve.png")],
+    callbacks        = [
+        RewardPlotCallback("grpo_reward_curve.png"),
+        BleuEvalSaveCallback(
+            tokenizer=tokenizer,
+            model=model,
+            eval_dataset=grpo_val_dataset,
+            save_dir=BEST_MODEL_DIR,
+            every_n_steps=GRPO_VAL_EVERY_STEPS,
+        ),
+    ],
 )
 
 torch.cuda.empty_cache()
@@ -310,7 +382,7 @@ test_ds = ld("gplsi/ES-VA_translation_test", split="test").select(range(N_QUICK)
 gold_es = [ex["es"] for ex in test_ds]
 gold_va = [ex["va"] for ex in test_ds]
 
-merged_model.eval()
+model.eval()
 tokenizer.padding_side = "left"
 hyps = []
 
@@ -318,8 +390,8 @@ for src in gold_es:
     prompt = make_inference_prompt(src)
     enc    = tokenizer(prompt, return_tensors="pt").to(DEVICE)
     with torch.no_grad():
-        out = merged_model.generate(**enc, max_new_tokens=128, do_sample=False,
-                                    pad_token_id=tokenizer.pad_token_id)
+        out = model.generate(**enc, max_new_tokens=128, do_sample=False,
+                             pad_token_id=tokenizer.pad_token_id)
     text = tokenizer.decode(out[0], skip_special_tokens=True)
     if "model" in text:
         text = text.split("model")[-1].strip()

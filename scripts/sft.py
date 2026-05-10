@@ -3,7 +3,9 @@
 # Paula Guerrero Castelló, May 2026
 # ---------------------------------------------------------------------------
 
+import os
 import gc
+import sacrebleu
 import torch
 import matplotlib.pyplot as plt
 import transformers
@@ -30,8 +32,13 @@ HF_TOKEN       = ""
 MODEL_ID       = "google/translategemma-4b-it"
 MAX_SEQ_LENGTH = 256
 SFT_TRAIN_SAMPLES = 50_000
-SFT_OUTPUT_DIR    = "./translategemma4b_sft_es_va"
-SFT_ADAPTER_DIR   = SFT_OUTPUT_DIR + "/lora_adapter"
+OUTPUT_ROOT       = "./outputs"
+SFT_RUN_DIR       = os.path.join(OUTPUT_ROOT, "sft")
+SFT_OUTPUT_DIR    = os.path.join(SFT_RUN_DIR, "checkpoints")
+SFT_BEST_MODEL_DIR = os.path.join(SFT_RUN_DIR, "best_model")
+SFT_VAL_SPLIT     = 0.02
+SFT_VAL_SAMPLES   = 200
+SFT_VAL_EVERY_STEPS = 100
 
 SOURCE_LANG_CODE = "es"
 TARGET_LANG_CODE = "ca"
@@ -42,7 +49,11 @@ DEVICE   = "cuda" if torch.cuda.is_available() else "cpu"
 USE_BF16 = torch.cuda.is_bf16_supported()
 
 
-login(token=HF_TOKEN)
+if HF_TOKEN:
+    login(token=HF_TOKEN)
+
+os.makedirs(SFT_OUTPUT_DIR, exist_ok=True)
+os.makedirs(SFT_BEST_MODEL_DIR, exist_ok=True)
 
 
 # Model & Tokenizer
@@ -136,8 +147,11 @@ def make_inference_prompt(source_text: str) -> str:
 # ---------------------------------------------------------------------------
 
 raw_dataset = load_dataset("gplsi/amic_parallel")
-print(raw_dataset)
-print("\nExample:", raw_dataset["train"][0])
+dataset_split = raw_dataset["train"].train_test_split(test_size=SFT_VAL_SPLIT, seed=42)
+train_raw = dataset_split["train"]
+val_raw = dataset_split["test"]
+print(dataset_split)
+print("\nExample:", train_raw[0])
 
 
 def formatting_prompts_func(examples):
@@ -147,11 +161,13 @@ def formatting_prompts_func(examples):
     ]}
 
 
-sft_dataset = raw_dataset.map(
+sft_train_dataset = train_raw.map(
     formatting_prompts_func,
     batched        = True,
-    remove_columns = raw_dataset["train"].column_names,
+    remove_columns = train_raw.column_names,
 )
+val_limit = min(SFT_VAL_SAMPLES, len(val_raw))
+val_samples = val_raw.select(range(val_limit))
 
 
 # Callbacks
@@ -179,6 +195,59 @@ class LossPlotCallback(TrainerCallback):
             plt.close()
 
 
+class BleuEvalSaveCallback(TrainerCallback):
+    def __init__(self, tokenizer, model, eval_samples, save_dir, every_n_steps=100):
+        self.tokenizer = tokenizer
+        self.model = model
+        self.eval_samples = eval_samples
+        self.save_dir = save_dir
+        self.every_n_steps = every_n_steps
+        self.best_bleu = float("-inf")
+
+    def _run_bleu_eval(self):
+        hyps, refs = [], []
+        self.model.eval()
+        for sample in self.eval_samples:
+            prompt = make_inference_prompt(sample[SOURCE_COL])
+            inputs = self.tokenizer(
+                prompt,
+                return_tensors="pt",
+                truncation=True,
+                max_length=MAX_SEQ_LENGTH,
+            ).to(self.model.device)
+            with torch.no_grad():
+                output_ids = self.model.generate(
+                    **inputs,
+                    max_new_tokens=128,
+                    do_sample=False,
+                    pad_token_id=self.tokenizer.eos_token_id,
+                )
+            new_tokens = output_ids[0][inputs["input_ids"].shape[1]:]
+            hyps.append(self.tokenizer.decode(new_tokens, skip_special_tokens=True).strip())
+            refs.append(sample[TARGET_COL])
+        bleu = sacrebleu.corpus_bleu(hyps, [refs]).score
+        self.model.train()
+        return bleu
+
+    def _maybe_save_best(self, step):
+        bleu = self._run_bleu_eval()
+        print(f"[val] step={step:4d} | BLEU={bleu:.4f} | best={self.best_bleu:.4f}")
+        if bleu > self.best_bleu:
+            self.best_bleu = bleu
+            self.model.save_pretrained(self.save_dir)
+            self.tokenizer.save_pretrained(self.save_dir)
+            print(f"[val] New best model saved to {self.save_dir}")
+
+    def on_step_end(self, args, state, control, **kwargs):
+        if state.global_step == 0 or state.global_step % self.every_n_steps != 0:
+            return
+        self._maybe_save_best(state.global_step)
+
+    def on_train_end(self, args, state, control, **kwargs):
+        if self.best_bleu == float("-inf"):
+            self._maybe_save_best(state.global_step)
+
+
 class Gemma3DataCollator:
     """Wraps the standard causal-LM collator and injects token_type_ids
     (all zeros) required by Gemma 3's attention-mask function."""
@@ -202,9 +271,20 @@ model.train()
 sft_trainer = SFTTrainer(
     model            = model,
     processing_class = tokenizer,
-    train_dataset    = sft_dataset["train"].shuffle(seed=42).select(range(SFT_TRAIN_SAMPLES)),
+    train_dataset    = sft_train_dataset.shuffle(seed=42).select(
+        range(min(SFT_TRAIN_SAMPLES, len(sft_train_dataset)))
+    ),
     data_collator    = Gemma3DataCollator(tokenizer),
-    callbacks        = [LossPlotCallback("sft_loss_curve.png")],
+    callbacks        = [
+        LossPlotCallback("sft_loss_curve.png"),
+        BleuEvalSaveCallback(
+            tokenizer=tokenizer,
+            model=model,
+            eval_samples=val_samples,
+            save_dir=SFT_BEST_MODEL_DIR,
+            every_n_steps=SFT_VAL_EVERY_STEPS,
+        ),
+    ],
     args = SFTConfig(
         packing                     = False,
         per_device_train_batch_size = 1,

@@ -62,7 +62,8 @@ CA_VA_FEATURES = {
     "mirall": "espill", "tomàquet": "tomaca", "tomàquets": "tomaques",
 }
 
-login(token=HF_TOKEN)
+if HF_TOKEN:
+    login(token=HF_TOKEN)
 
 
 # --- Setup -------------------------------------------------------------
@@ -138,13 +139,22 @@ def translate_all(model, tok, sources, refs, label):
     return hyps, skipped_idx
 
 
+def comet_scores(sources, hyps, refs):
+    data = [{"src": src, "mt": hyp, "ref": ref} for src, hyp, ref in zip(sources, hyps, refs)]
+    output = comet_model.predict(data, batch_size=8, gpus=1 if DEVICE == "cuda" else 0)
+    return output.scores if hasattr(output, "scores") else output[0]
+
+
 def compute_metrics(hyps, refs, skipped_idx, model_name):
-    h = [h for i, h in enumerate(hyps) if i not in skipped_idx]
-    r = [r for i, r in enumerate(refs)  if i not in skipped_idx]
+    kept = [i for i in range(len(hyps)) if i not in skipped_idx]
+    s = [gold_es[i] for i in kept]
+    h = [hyps[i] for i in kept]
+    r = [refs[i] for i in kept]
     chrf = sacrebleu.corpus_chrf(h, [r])
     bleu = sacrebleu.corpus_bleu(h, [r])
     ter  = sacrebleu.corpus_ter(h, [r])
     blrt = bleurt_scorer.score(references=r, candidates=h)
+    comet = comet_scores(s, h, r)
     return {
         "model"  : model_name,
         "n_eval" : len(h),
@@ -153,6 +163,7 @@ def compute_metrics(hyps, refs, skipped_idx, model_name):
         "BLEU"   : round(bleu.score, 4),
         "TER"    : round(ter.score,  4),
         "BLEURT" : round(sum(blrt) / len(blrt), 4),
+        "COMET"  : round(sum(comet) / len(comet), 4),
     }
 
 
@@ -161,7 +172,8 @@ def sentence_metrics(hyp, ref):
     bleu = sacrebleu.sentence_bleu(hyp, [ref]).score
     ter  = sacrebleu.sentence_ter(hyp, [ref]).score
     blrt = bleurt_scorer.score(references=[ref], candidates=[hyp])[0]
-    return chrf, bleu, ter, blrt
+    comet = comet_scores([""], [hyp], [ref])[0]
+    return chrf, bleu, ter, blrt, comet
 
 
 def evaluate_only(model, tokenizer, label="EVAL", n_samples=1000):
@@ -169,7 +181,10 @@ def evaluate_only(model, tokenizer, label="EVAL", n_samples=1000):
     metrics = compute_metrics(hyps, gold_va[:n_samples], skipped, label.lower())
     metrics["model"] = label.upper()
     metrics["skipped_indices"] = skipped
-    print(f"  {label.upper()} -> chrF: {metrics['chrF']:.2f} | BLEU: {metrics['BLEU']:.2f}")
+    print(
+        f"  {label.upper()} -> chrF: {metrics['chrF']:.2f} | "
+        f"BLEU: {metrics['BLEU']:.2f} | COMET: {metrics['COMET']:.4f}"
+    )
     return metrics, hyps, skipped
 
 
@@ -298,15 +313,16 @@ hyps_all    = {
 
 best_chrf   = max(m["chrF"]   for m in all_metrics)
 best_bleurt = max(m["BLEURT"] for m in all_metrics)
+best_comet  = max(m["COMET"]  for m in all_metrics)
 
 print("\n" + "="*84)
-print(f"  {'Model':<10} {'chrF':>7} {'BLEU':>7} {'TER':>7} {'BLEURT':>8} {'Eval':>5} {'Skip':>5}")
+print(f"  {'Model':<10} {'chrF':>7} {'BLEU':>7} {'TER':>7} {'BLEURT':>8} {'COMET':>8} {'Eval':>5} {'Skip':>5}")
 print("="*84)
 for m in all_metrics:
     print(f"  {m['model']:<10} {m['chrF']:>7.2f} {m['BLEU']:>7.2f} "
-          f"{m['TER']:>7.2f} {m['BLEURT']:>8.4f} {m['n_eval']:>5} {m['skipped']:>5}")
+          f"{m['TER']:>7.2f} {m['BLEURT']:>8.4f} {m['COMET']:>8.4f} {m['n_eval']:>5} {m['skipped']:>5}")
 print("="*84)
-print("  TER: lower is better  |  chrF / BLEU / BLEURT: higher is better")
+print("  TER: lower is better  |  chrF / BLEU / BLEURT / COMET: higher is better")
 
 with open("eval_results_combined.json", "w", encoding="utf-8") as f:
     json.dump({

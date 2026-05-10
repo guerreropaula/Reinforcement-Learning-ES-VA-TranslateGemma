@@ -3,6 +3,7 @@
 # Paula Guerrero Castelló, May 2026
 # --------------------------------------------------------------------------
 
+import os
 import gc
 import importlib
 import sacrebleu
@@ -34,7 +35,10 @@ HF_TOKEN       = ""
 BASE_MODEL_ID  = "google/translategemma-4b-it"
 SFT_MODEL_ID   = "guerreropaula/translategemma4b-sft-es-va"
 CLF_REPO_ID    = "guerreropaula/ht_mt_classifier_best"
-GRPO_OUTPUT_DIR = "./translategemma4b_grpo_es_va"
+OUTPUT_ROOT     = "./outputs"
+GRPO_RUN_DIR    = os.path.join(OUTPUT_ROOT, "grpov1")
+GRPO_OUTPUT_DIR = os.path.join(GRPO_RUN_DIR, "checkpoints")
+GRPO_BEST_MODEL_DIR = os.path.join(GRPO_RUN_DIR, "best_model")
 
 SOURCE_LANG_CODE = "es"
 TARGET_LANG_CODE = "ca"
@@ -49,10 +53,17 @@ CLF_WARMUP_STEPS = 50
 CLF_WEIGHT_MAX   = 0.3
 TOTAL_STEPS      = 100
 GRPO_TRAIN_SAMPLES = 5_000
+GRPO_VAL_SPLIT     = 0.02
+GRPO_VAL_SAMPLES   = 200
+GRPO_VAL_EVERY_STEPS = 20
 
 _reward_step_counter = {"step": 0}
 
-login(token=HF_TOKEN)
+if HF_TOKEN:
+    login(token=HF_TOKEN)
+
+os.makedirs(GRPO_OUTPUT_DIR, exist_ok=True)
+os.makedirs(GRPO_BEST_MODEL_DIR, exist_ok=True)
 
 
 
@@ -121,6 +132,9 @@ def make_inference_prompt(source_text: str) -> str:
 # --- GRPO Dataset ------------------------------------------------------------
 
 raw_dataset = load_dataset("gplsi/amic_parallel")
+dataset_split = raw_dataset["train"].train_test_split(test_size=GRPO_VAL_SPLIT, seed=42)
+train_raw = dataset_split["train"]
+val_raw = dataset_split["test"]
 
 
 def make_grpo_example(examples):
@@ -130,11 +144,17 @@ def make_grpo_example(examples):
     }
 
 
-grpo_raw     = raw_dataset["train"].shuffle(seed=123).select(range(GRPO_TRAIN_SAMPLES))
+grpo_raw     = train_raw.shuffle(seed=123).select(range(min(GRPO_TRAIN_SAMPLES, len(train_raw))))
 grpo_dataset = grpo_raw.map(
     make_grpo_example,
     batched        = True,
     remove_columns = grpo_raw.column_names,
+)
+grpo_val_raw = val_raw.select(range(min(GRPO_VAL_SAMPLES, len(val_raw))))
+grpo_val_dataset = grpo_val_raw.map(
+    make_grpo_example,
+    batched=True,
+    remove_columns=grpo_val_raw.column_names,
 )
 
 
@@ -149,9 +169,7 @@ print(f"Labels     : {_clf_model.config.id2label}")
 
 def _clf_alpha() -> float:
     step = _reward_step_counter["step"]
-    if step < CLF_WARMUP_STEPS:
-        return 0.0
-    progress = min(1.0, (step - CLF_WARMUP_STEPS) / max(1, TOTAL_STEPS - CLF_WARMUP_STEPS))
+    progress = min(1.0, step / max(1, CLF_WARMUP_STEPS))
     return CLF_WEIGHT_MAX * progress
 
 
@@ -295,6 +313,56 @@ class SampleLoggerCallback(TrainerCallback):
         self.model.train()
 
 
+class BleuEvalSaveCallback(TrainerCallback):
+    def __init__(self, tokenizer, model, eval_dataset, save_dir, every_n_steps=20):
+        self.tokenizer = tokenizer
+        self.model = model
+        self.eval_dataset = eval_dataset
+        self.save_dir = save_dir
+        self.every_n_steps = every_n_steps
+        self.best_bleu = float("-inf")
+
+    def _run_bleu_eval(self):
+        hyps, refs = [], []
+        self.model.eval()
+        for sample in self.eval_dataset:
+            inputs = self.tokenizer(
+                sample["prompt"], return_tensors="pt", truncation=True, max_length=256
+            ).to(self.model.device)
+            with torch.no_grad():
+                output_ids = self.model.generate(
+                    **inputs,
+                    max_new_tokens=100,
+                    do_sample=False,
+                    pad_token_id=self.tokenizer.eos_token_id,
+                )
+            input_len = inputs["attention_mask"][0].sum().item()
+            hyp = self.tokenizer.decode(output_ids[0][input_len:], skip_special_tokens=True).strip()
+            hyps.append(hyp)
+            refs.append(sample["reference"])
+        bleu = sacrebleu.corpus_bleu(hyps, [refs]).score
+        self.model.train()
+        return bleu
+
+    def _maybe_save_best(self, step):
+        bleu = self._run_bleu_eval()
+        print(f"[val] step={step:4d} | BLEU={bleu:.4f} | best={self.best_bleu:.4f}")
+        if bleu > self.best_bleu:
+            self.best_bleu = bleu
+            self.model.save_pretrained(self.save_dir)
+            self.tokenizer.save_pretrained(self.save_dir)
+            print(f"[val] New best model saved to {self.save_dir}")
+
+    def on_step_end(self, args, state, control, **kwargs):
+        if state.global_step == 0 or state.global_step % self.every_n_steps != 0:
+            return
+        self._maybe_save_best(state.global_step)
+
+    def on_train_end(self, args, state, control, **kwargs):
+        if self.best_bleu == float("-inf"):
+            self._maybe_save_best(state.global_step)
+
+
 
 # --- GRPO training -------------------------------------------------------------
 
@@ -318,8 +386,8 @@ grpo_config = GRPOConfig(
     save_steps                  = 20,
     seed                        = 3407,
     report_to                   = "none",
-    fp16                        = False,
-    bf16                        = True,
+    fp16                        = not USE_BF16,
+    bf16                        = USE_BF16,
 )
 
 grpo_trainer = GRPOTrainer(
@@ -332,6 +400,15 @@ grpo_trainer = GRPOTrainer(
 
 grpo_trainer.add_callback(
     SampleLoggerCallback(tokenizer, model, grpo_dataset, every_n_steps=50, n_examples=3)
+)
+grpo_trainer.add_callback(
+    BleuEvalSaveCallback(
+        tokenizer=tokenizer,
+        model=model,
+        eval_dataset=grpo_val_dataset,
+        save_dir=GRPO_BEST_MODEL_DIR,
+        every_n_steps=GRPO_VAL_EVERY_STEPS,
+    )
 )
 
 grpo_stats = grpo_trainer.train()
