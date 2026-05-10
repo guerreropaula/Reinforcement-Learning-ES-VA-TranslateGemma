@@ -1,6 +1,6 @@
 # Scripts
 
-This folder contains the training and evaluation scripts used throughout the experiments.
+This directory contains all scripts required to reproduce the experiments reported in the paper, including supervised fine-tuning, reward model training, reinforcement learning, and evaluation.
 
 ## Recommended order
 
