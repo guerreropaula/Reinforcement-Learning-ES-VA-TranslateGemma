@@ -3,13 +3,29 @@
 > **EAMT 2026** · University of the Basque Country (UPV/EHU)  
 > Paula Guerrero Castelló · `pguerrero005@ikasle.ehu.eus`
 
-This repository contains the code, models, and evaluation scripts for our EAMT 2026 paper on adapting a translation-specialized LLM to the low-resource Spanish→Valencian (ES→VA) direction using supervised fine-tuning (SFT) and Group Relative Policy Optimization (GRPO).
+This repository contains the code, models, and evaluation scripts for our EAMT 2026 paper on adapting a translation-specialized LLM to the low-resource Spanish-Valencian (ES→VLCA) direction using supervised fine-tuning (SFT) and Group Relative Policy Optimization (GRPO).
 
 ---
 
 ## Abstract
 
 Valencian lacks a dedicated language code in most multilingual MT systems and is systematically rendered as standard (Eastern) Catalan. We adapt **TranslateGemma-4B-IT** through three post-training strategies—SFT, GRPO with a learned naturalness classifier (GRPOv1), and GRPO with a composite automatic-metric reward (GRPOv2)—using only publicly available corpora and QLoRA-based training on commodity hardware. Our results show that SFT delivers the largest single-step gain, while GRPOv2 surpasses SFT on all five standard MT metrics. A classifier-based naturalness reward (GRPOv1) causes dialect suppression, underscoring that reward-function alignment with the target variety is critical for dialectal MT.
+
+---
+
+## Repository Structure
+
+| Path | Description |
+|---|---|
+| `scripts/sft.py` | SFT — QLoRA fine-tuning on 50k ES–VA pairs |
+| `scripts/classifier.py` | HT/MT translationese classifier (RoBERTa-ca) |
+| `scripts/grpov1.py` | GRPOv1 — chrF + naturalness classifier reward |
+| `scripts/grpov2.py` | GRPOv2 — composite reward ★ |
+| `scripts/evaluate.py` | Full evaluation + dialectal analysis |
+| `results/summary_metrics.xlsx` | Aggregated metrics for all systems |
+| `results/eval_results_1k.xlsx` | Per-sentence metrics (1,000 sentences) |
+| `requirements.txt` | Python dependencies |
+| `README.md` | Project documentation |
 
 ---
 
@@ -28,7 +44,7 @@ Evaluated on 1,000 sentences from [`gplsi/ES-VA_translation_test`](https://huggi
 
 ### Dialectal Valencian Score (DVS)
 
-DVS measures the rate at which a system produces Valencian-specific morpho-lexical forms over 30 contrastive CA–VA pairs.
+DVS measures the rate at which a system produces Valencian-specific morpho-lexical forms over 35 contrastive CA–VA pairs.
 
 | System | DVS ↑ |
 |---|---|
@@ -50,20 +66,12 @@ DVS measures the rate at which a system produces Valencian-specific morpho-lexic
 
 ## Training Pipeline
 
-```
-TranslateGemma-4B-IT (zero-shot baseline)
-        │
-        ▼
-   SFT — 50k ES–VA pairs (gplsi/amic_parallel)
-   QLoRA r=16, α=32, 4-bit NF4, 3 epochs
-        │
-        ├─────────────────────────┐
-        ▼                         ▼
-   GRPOv1 (5k pairs)         GRPOv2 (10k pairs) ★
-   r = (1−α)·chrF + α·P(HT)  r = 0.5·chrF + 0.3·COMET
-   α: 0→0.3 warm-up           + 0.2·TTR − copy_penalty
-   100 steps, β=0.04          200 steps, β=0.04
-```
+| Model | Initialization | Training Data | Objective |
+|---|---|---|---|
+| Baseline | `TranslateGemma-4B-IT` | — | Zero-shot inference |
+| SFT | Baseline | 50k ES–VA pairs | QLoRA supervised fine-tuning |
+| GRPOv1 | SFT checkpoint | 5k ES–VA pairs | `chrF + naturalness classifier reward` |
+| GRPOv2 ★ | SFT checkpoint | 10k ES–VA pairs | `chrF + COMET + TTR − copy penalty` |
 
 ---
 
@@ -84,21 +92,7 @@ r = 0.5 * chrF(hyp, ref) + 0.3 * COMET(src, hyp, ref) \
 
 ---
 
-## Repository Structure
 
-| Path | Description |
-|---|---|
-| `scripts/sft.py` | SFT — QLoRA fine-tuning on 50k ES–VA pairs |
-| `scripts/classifier.py` | HT/MT translationese classifier (RoBERTa-ca) |
-| `scripts/grpov1.py` | GRPOv1 — chrF + naturalness classifier reward |
-| `scripts/grpov2.py` | GRPOv2 — composite reward ★ |
-| `scripts/evaluate.py` | Full evaluation + dialectal analysis |
-| `results/summary_metrics.xlsx` | Aggregated metrics for all systems |
-| `results/eval_results_1k.xlsx` | Per-sentence metrics (1,000 sentences) |
-| `requirements.txt` | Python dependencies |
-| `README.md` | Project documentation |
-
----
 
 ## Installation
 
@@ -141,7 +135,7 @@ unzip bleurt-base-128.zip
 
 | Dataset | Usage |
 |---|---|
-| [`gplsi/amic_parallel`](https://huggingface.co/datasets/gplsi/amic_parallel) | SFT and GRPO training (ES–VA parallel) |
+| [`gplsi/amic_parallel`](https://huggingface.co/datasets/gplsi/amic_parallel) | SFT and GRPO training (ES–VLCA parallel) |
 | [`gplsi/ES-VA_translation_test`](https://huggingface.co/datasets/gplsi/ES-VA_translation_test) | Evaluation test set|
 | TildeMODEL, DOGC, Europarl | HT/MT classifier training (standard Catalan) |
 
