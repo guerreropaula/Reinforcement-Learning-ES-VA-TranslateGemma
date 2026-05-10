@@ -86,22 +86,43 @@ r = 0.5 * chrF(hyp, ref) + 0.3 * COMET(src, hyp, ref) \
 
 ## Repository Structure
 
-```
-.
-├── scripts/
-│   ├── sft.py                     # SFT — QLoRA fine-tuning on 50k ES–VA pairs
-│   ├── classifier.py              # HT/MT translationese classifier (RoBERTa-ca)
-│   ├── grpov1.py                  # GRPOv1 — chrF + naturalness classifier reward
-│   ├── grpov2.py                  # GRPOv2 — composite reward ★
-│   └── evaluate.py                # Full evaluation + dialectal analysis
-├── results/
-│   ├── summary_metrics.xlsx       # Aggregated metrics for all systems
-│   └── eval_results_1k.xlsx       # Per-sentence metrics (1,000 sentences)
-├── requirements.txt
-└── README.md
+| Path | Description |
+|---|---|
+| `scripts/sft.py` | SFT — QLoRA fine-tuning on 50k ES–VA pairs |
+| `scripts/classifier.py` | HT/MT translationese classifier (RoBERTa-ca) |
+| `scripts/grpov1.py` | GRPOv1 — chrF + naturalness classifier reward |
+| `scripts/grpov2.py` | GRPOv2 — composite reward ★ |
+| `scripts/evaluate.py` | Full evaluation + dialectal analysis |
+| `results/summary_metrics.xlsx` | Aggregated metrics for all systems |
+| `results/eval_results_1k.xlsx` | Per-sentence metrics (1,000 sentences) |
+| `requirements.txt` | Python dependencies |
+| `README.md` | Project documentation |
+
+---
+
+## Installation
+
+Install PyTorch with CUDA 12.1 support:
+
+```bash
+pip install torch==2.8.0 torchvision==0.23.0 torchaudio==2.8.0 \
+  --index-url https://download.pytorch.org/whl/cu121
 ```
 
-Run scripts in order on GPU.
+Install remaining dependencies:
+
+```bash
+pip install -r requirements.txt
+```
+
+Install BLEURT separately:
+
+```bash
+pip install git+https://github.com/google-research/bleurt.git
+
+wget https://storage.googleapis.com/bleurt-oss/bleurt-base-128.zip
+unzip bleurt-base-128.zip
+```
 
 ---
 
