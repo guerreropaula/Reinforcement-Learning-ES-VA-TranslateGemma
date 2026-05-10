@@ -2,7 +2,7 @@
 
 This directory contains all scripts required to reproduce the experiments reported in the paper, including supervised fine-tuning, reward model training, reinforcement learning, and evaluation.
 
-## Recommended order
+## Execution order
 
 1. `sft.py`
    Trains the SFT adapter for Spanish-Valencian with QLoRA on `gplsi/amic_parallel`.
