@@ -28,7 +28,7 @@ from huggingface_hub import login
 
 # ------- Config -----------------------------------------------------------
 
-hf_token = "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"
+hf_token = ""
 model_id = "google/translategemma-4b-it"
 max_seq_length = 256
 sft_train_samples = 50_000
