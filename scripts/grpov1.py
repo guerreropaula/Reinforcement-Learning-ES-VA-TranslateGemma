@@ -313,16 +313,16 @@ class SampleLoggerCallback(TrainerCallback):
         self.model.train()
 
 
-class BleuEvalSaveCallback(TrainerCallback):
+class RewardEvalSaveCallback(TrainerCallback):
     def __init__(self, tokenizer, model, eval_dataset, save_dir, every_n_steps=20):
         self.tokenizer = tokenizer
         self.model = model
         self.eval_dataset = eval_dataset
         self.save_dir = save_dir
         self.every_n_steps = every_n_steps
-        self.best_bleu = float("-inf")
+        self.best_reward = float("-inf")
 
-    def _run_bleu_eval(self):
+    def _run_reward_eval(self):
         hyps, refs = [], []
         self.model.eval()
         for sample in self.eval_dataset:
@@ -340,15 +340,20 @@ class BleuEvalSaveCallback(TrainerCallback):
             hyp = self.tokenizer.decode(output_ids[0][input_len:], skip_special_tokens=True).strip()
             hyps.append(hyp)
             refs.append(sample["reference"])
-        bleu = sacrebleu.corpus_bleu(hyps, [refs]).score
+        reward_values = []
+        for hyp, ref in zip(hyps, refs):
+            chrf_reward = 0.0 if not hyp.strip() or not ref.strip() else sacrebleu.sentence_chrf(hyp, [ref]).score / 100.0
+            ht_reward = translationese_reward([hyp])[0] if hyp.strip() else 0.0
+            reward_values.append((1.0 - CLF_WEIGHT_MAX) * chrf_reward + CLF_WEIGHT_MAX * ht_reward)
+        mean_reward = sum(reward_values) / len(reward_values) if reward_values else 0.0
         self.model.train()
-        return bleu
+        return mean_reward
 
     def _maybe_save_best(self, step):
-        bleu = self._run_bleu_eval()
-        print(f"[val] step={step:4d} | BLEU={bleu:.4f} | best={self.best_bleu:.4f}")
-        if bleu > self.best_bleu:
-            self.best_bleu = bleu
+        reward = self._run_reward_eval()
+        print(f"[val] step={step:4d} | reward={reward:.4f} | best={self.best_reward:.4f}")
+        if reward > self.best_reward:
+            self.best_reward = reward
             self.model.save_pretrained(self.save_dir)
             self.tokenizer.save_pretrained(self.save_dir)
             print(f"[val] New best model saved to {self.save_dir}")
@@ -359,7 +364,7 @@ class BleuEvalSaveCallback(TrainerCallback):
         self._maybe_save_best(state.global_step)
 
     def on_train_end(self, args, state, control, **kwargs):
-        if self.best_bleu == float("-inf"):
+        if self.best_reward == float("-inf"):
             self._maybe_save_best(state.global_step)
 
 
@@ -402,7 +407,7 @@ grpo_trainer.add_callback(
     SampleLoggerCallback(tokenizer, model, grpo_dataset, every_n_steps=50, n_examples=3)
 )
 grpo_trainer.add_callback(
-    BleuEvalSaveCallback(
+    RewardEvalSaveCallback(
         tokenizer=tokenizer,
         model=model,
         eval_dataset=grpo_val_dataset,
