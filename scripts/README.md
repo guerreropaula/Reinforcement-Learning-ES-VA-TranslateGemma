@@ -5,7 +5,7 @@ This directory contains all scripts required to reproduce the experiments report
 ## Recommended order
 
 1. `sft.py`
-   Trains the SFT adapter for Spanish -> Valencian with QLoRA on `gplsi/amic_parallel`.
+   Trains the SFT adapter for Spanish-Valencian with QLoRA on `gplsi/amic_parallel`.
 
 2. `classifier.py`
    Trains the HT/MT classifier used later as part of the `GRPOv1` reward.
