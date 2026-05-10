@@ -7,7 +7,7 @@
 > **EAMT 2026** · University of the Basque Country (UPV/EHU)  
 > Paula Guerrero Castelló · `pguerrero005@ikasle.ehu.eus`
 
-This repository contains the code, models, and evaluation scripts for our EAMT 2026 paper on adapting a translation-specialized LLM to the low-resource Spanish-Valencian (ES→VLCA) direction using supervised fine-tuning (SFT) and Group Relative Policy Optimization (GRPO).
+This repository contains the code, models, and evaluation scripts for our EAMT 2026 paper on adapting a translation-specialized LLM to the low-resource Spanish-Valencian (ES-VLCA) direction using supervised fine-tuning (SFT) and Group Relative Policy Optimization (GRPO).
 
 ---
 
