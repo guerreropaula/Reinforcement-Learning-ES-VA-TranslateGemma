@@ -1,4 +1,4 @@
-# 02_ht_mt_classifier.py
+# classifier.py
 # HT vs. MT Binary Classifier
 # Paula Guerrero Castelló, May 2026
 # ---------------------------------------------------------------------------
