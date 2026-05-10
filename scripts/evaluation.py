@@ -1,4 +1,4 @@
-# 05_evaluation.py
+# evaluation.py
 # Final evaluation: baseline vs. SFT vs. GRPOv1 vs. GRPOv2
 # Metrics: chrF, BLEU, TER, BLEURT, COMET + dialectal valencian score (DVS)
 # Paula Guerrero Castelló, May 2026
